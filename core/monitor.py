@@ -59,6 +59,7 @@ class DealsMonitor:
                 deals = await scraper_manager.search_all(
                     query=query,
                     target_price=target_price,
+                    min_price=search.get("min_price"),
                     exclude_broken=exclude_broken,
                     max_results_per_platform=15
                 )

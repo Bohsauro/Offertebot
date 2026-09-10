@@ -10,26 +10,32 @@ general:
 default_searches:
   - query: "New Nintendo 2DS XL"
     target_price: 130.0
+    min_price: 45.0
     exclude_broken: false
     enabled: true
   - query: "New Nintendo 3DS XL"
     target_price: 170.0
+    min_price: 55.0
     exclude_broken: false
     enabled: true
   - query: "New Nintendo 3DS"
     target_price: 140.0
+    min_price: 50.0
     exclude_broken: false
     enabled: true
   - query: "Nintendo 3DS XL"
     target_price: 100.0
+    min_price: 40.0
     exclude_broken: false
     enabled: true
   - query: "Nintendo 3DS"
     target_price: 70.0
+    min_price: 35.0
     exclude_broken: false
     enabled: true
   - query: "PS Vita"
     target_price: 100.0
+    min_price: 40.0
     exclude_broken: false
     enabled: true
 

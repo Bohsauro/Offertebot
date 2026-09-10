@@ -18,6 +18,7 @@ CONFIG_FILE = BASE_DIR / "config.yaml"
 class SearchTarget(BaseModel):
     query: str
     target_price: Optional[float] = None
+    min_price: Optional[float] = None
     exclude_broken: bool = False
     enabled: bool = True
 

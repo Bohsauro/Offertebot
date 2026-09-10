@@ -73,9 +73,11 @@ async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     try:
+        min_price = (target_price * 0.35) if (target_price and target_price >= 50.0) else None
         deals = await scraper_manager.search_all(
             query=query,
             target_price=target_price,
+            min_price=min_price,
             exclude_broken=False,
             max_results_per_platform=10
         )

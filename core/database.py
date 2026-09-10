@@ -26,6 +26,7 @@ class Database:
                     chat_id TEXT NOT NULL,
                     query TEXT NOT NULL,
                     target_price REAL,
+                    min_price REAL,
                     min_score REAL DEFAULT 7.0,
                     exclude_broken INTEGER DEFAULT 0,
                     is_active INTEGER DEFAULT 1,
@@ -76,12 +77,13 @@ class Database:
         if count == 0 and settings.default_searches:
             for s in settings.default_searches:
                 await db.execute("""
-                    INSERT INTO tracked_searches (chat_id, query, target_price, min_score, exclude_broken, is_active)
-                    VALUES (?, ?, ?, ?, ?, ?);
+                    INSERT INTO tracked_searches (chat_id, query, target_price, min_price, min_score, exclude_broken, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?);
                 """, (
                     default_chat_id,
                     s.query,
                     s.target_price,
+                    s.min_price,
                     settings.min_alert_score,
                     1 if s.exclude_broken else 0,
                     1 if s.enabled else 0
@@ -94,14 +96,15 @@ class Database:
         chat_id: str,
         query: str,
         target_price: Optional[float] = None,
+        min_price: Optional[float] = None,
         min_score: float = 7.0,
         exclude_broken: bool = False
     ) -> int:
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
-                INSERT INTO tracked_searches (chat_id, query, target_price, min_score, exclude_broken, is_active)
-                VALUES (?, ?, ?, ?, ?, 1);
-            """, (chat_id, query.strip(), target_price, min_score, 1 if exclude_broken else 0))
+                INSERT INTO tracked_searches (chat_id, query, target_price, min_price, min_score, exclude_broken, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, 1);
+            """, (chat_id, query.strip(), target_price, min_price, min_score, 1 if exclude_broken else 0))
             await db.commit()
             return cursor.lastrowid
 

@@ -25,6 +25,7 @@ class ScraperManager:
         self,
         query: str,
         target_price: Optional[float] = None,
+        min_price: Optional[float] = None,
         exclude_broken: bool = False,
         max_results_per_platform: int = 20
     ) -> List[DealItem]:
@@ -56,7 +57,10 @@ class ScraperManager:
                         combined_deals.append(deal)
 
         # Analisi semantica difetti e calcolo voto 1-10
-        analyzed_deals = analyzer.analyze_batch(combined_deals, target_price=target_price)
+        analyzed_deals = analyzer.analyze_batch(combined_deals, target_price=target_price, min_price=min_price)
+
+        # Se la ricerca punta a una console o se l'utente cerca l'hardware, escludiamo a priori giochi e cover
+        analyzed_deals = [d for d in analyzed_deals if d.defect_severity != "ACCESSORY"]
 
         # Filtro per escludere articoli con danni critici se richiesto
         if exclude_broken:

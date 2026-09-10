@@ -131,6 +131,41 @@ class DealAnalyzer:
 
         return labels, highest_severity, total_penalty, total_bonus
 
+    GAME_ACCESSORY_PATTERNS = [
+        r'\b(?:gioco|giochi|videogioco|videogiochi|juego|juegos|jeu|jeux|game|games|spiel|spiele)\b',
+        r'\b(?:cartuccia|cartucce|cartouche|cartuchos|cartridge)\b',
+        r'\b(?:alimentatore|caricatore|caricabatterie|charger|chargeur|netzteil|adattatore)\b',
+        r'\b(?:cavo|cable|kabel)\b',
+        r'\b(?:custodia|funda|housse|pochette|cover|case)\b',
+        r'\b(?:scatola vuota|solo scatola|empty box|boite vide|caja vacia)\b',
+        r'\b(?:pennino|stylus|memory card|scheda sd)\b',
+        r'\b(?:manuale|guida|libretto)\b',
+        r'\b(?:per|pour|para|for|für)\s+(?:nintendo|ps\s*vita|psvita|sony|console|3ds|2ds)\b'
+    ]
+
+    def is_accessory_or_game(self, title: str, query: str = "") -> bool:
+        """Verifica se l'annuncio riguarda un gioco, alimentatore o custodia invece della console."""
+        lower_title = title.lower()
+        query_lower = query.lower()
+
+        # Verifica se la ricerca punta a una console
+        is_console_query = any(k in query_lower for k in ("3ds", "2ds", "vita", "psvita", "console", "switch", "ps5", "playstation"))
+        if not is_console_query:
+            return self.is_accessory(title)
+
+        # Se il venditore specifica esplicitamente console + bundle, non è solo un gioco
+        if any(p in lower_title for p in ("console con", "console +", "console e ", "pack console", "bundle console")):
+            return False
+
+        # Se il titolo inizia o contiene parole inequivocabili di giochi o accessori
+        for pattern in self.GAME_ACCESSORY_PATTERNS:
+            if re.search(pattern, lower_title):
+                # Se non ha la parola console esplicita, è sicuramente un gioco/accessorio
+                if "console" not in lower_title:
+                    return True
+
+        return self.is_accessory(title)
+
     def is_accessory(self, text: str) -> bool:
         """Verifica se l'annuncio riguarda solo un accessorio (es. cover, pellicola, scatola vuota)."""
         lower = text.lower()
@@ -143,7 +178,8 @@ class DealAnalyzer:
         self,
         item: DealItem,
         target_price: Optional[float] = None,
-        market_median_price: Optional[float] = None
+        market_median_price: Optional[float] = None,
+        min_price: Optional[float] = None
     ) -> float:
         """
         Calcola il voto da 1.0 a 10.0 sulla qualità complessiva dell'offerta.
@@ -152,7 +188,7 @@ class DealAnalyzer:
         - Rapporto con il Prezzo Target (se specificato) oppure Mediana di Mercato
         - Penalità per difetti rilevati
         - Bonus per prodotti sigillati o pari al nuovo
-        - Rilevamento accessori ingannevoli a bassissimo costo
+        - Rilevamento giochi, alimentatori e accessori ingannevoli
         """
         # Assicuriamo che la spedizione sia calcolata
         if item.is_international and item.shipping_cost == 0.0:
@@ -166,15 +202,22 @@ class DealAnalyzer:
         if total_price <= 0:
             return 1.0
 
-        # Controllo se è solo un accessorio (es. cover da 4€ mentre si cerca un telefono)
-        reference_price = target_price or market_median_price
-        if reference_price and reference_price > 50.0 and total_price < (reference_price * 0.20):
-            if self.is_accessory(f"{item.title} {item.description}"):
-                item.score = 1.0
-                item.defect_severity = "ACCESSORY"
-                item.defect_labels = ["📦 SOLO ACCESSORIO / COVER"]
-                item.score_breakdown = {"reason": "accessorio non pertinente"}
-                return 1.0
+        # Filtro soglia minima (es. console 3DS sotto i 35€ è sicuramente un gioco/accessorio)
+        effective_min = min_price or ((target_price * 0.35) if target_price and target_price >= 60.0 else None)
+        if effective_min and total_price < effective_min:
+            item.score = 1.0
+            item.defect_severity = "ACCESSORY"
+            item.defect_labels = ["📦 SOLO GIOCO O ACCESSORIO"]
+            item.score_breakdown = {"reason": "prezzo troppo basso per essere la console completa"}
+            return 1.0
+
+        # Controllo se è solo un gioco o un accessorio
+        if self.is_accessory_or_game(item.title, query=item.search_query):
+            item.score = 1.0
+            item.defect_severity = "ACCESSORY"
+            item.defect_labels = ["📦 SOLO GIOCO O ACCESSORIO"]
+            item.score_breakdown = {"reason": "annuncio identificato come gioco o accessorio"}
+            return 1.0
 
         # Rilevamento difetti
         labels, severity, penalty, bonus = self.detect_conditions(item)
@@ -238,7 +281,8 @@ class DealAnalyzer:
     def analyze_batch(
         self,
         items: List[DealItem],
-        target_price: Optional[float] = None
+        target_price: Optional[float] = None,
+        min_price: Optional[float] = None
     ) -> List[DealItem]:
         """
         Analizza un insieme di offerte calcolando la mediana dei prezzi (se target_price non c'è)
@@ -255,7 +299,7 @@ class DealAnalyzer:
             market_median = valid_prices[mid] if len(valid_prices) % 2 != 0 else (valid_prices[mid - 1] + valid_prices[mid]) / 2.0
 
         for item in items:
-            self.calculate_score(item, target_price=target_price, market_median_price=market_median)
+            self.calculate_score(item, target_price=target_price, market_median_price=market_median, min_price=min_price)
 
         # Ordina per punteggio decrescente (le migliori offerte per prime)
         items.sort(key=lambda x: x.score, reverse=True)
