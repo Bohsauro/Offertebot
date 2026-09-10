@@ -131,38 +131,39 @@ class DealAnalyzer:
 
         return labels, highest_severity, total_penalty, total_bonus
 
-    GAME_ACCESSORY_PATTERNS = [
-        r'\b(?:gioco|giochi|videogioco|videogiochi|juego|juegos|jeu|jeux|game|games|spiel|spiele)\b',
-        r'\b(?:cartuccia|cartucce|cartouche|cartuchos|cartridge)\b',
-        r'\b(?:alimentatore|caricatore|caricabatterie|charger|chargeur|netzteil|adattatore)\b',
-        r'\b(?:cavo|cable|kabel)\b',
-        r'\b(?:custodia|funda|housse|pochette|cover|case)\b',
-        r'\b(?:scatola vuota|solo scatola|empty box|boite vide|caja vacia)\b',
-        r'\b(?:pennino|stylus|memory card|scheda sd)\b',
-        r'\b(?:manuale|guida|libretto)\b',
-        r'\b(?:per|pour|para|for|für)\s+(?:nintendo|ps\s*vita|psvita|sony|console|3ds|2ds)\b'
-    ]
+    GAME_FRANCHISES = r'\b(?:pokemon|pok[eé]mon|mario|zelda|luigi|yo-kai|yokai|spider-?man|last of us|god of war|gran turismo|demon slayer|one punch|fist of the north star|attack on titan|a\.o\.t|inazuma|monster hunter|fifa|pes|call of duty|gta|grand theft auto|assassin|resident evil|final fantasy|dragon quest|kingdom hearts|kirby|metroid|fire emblem|layton|sonic|crash bandicoot|spyro|bionicle|ratatouille|star wars|dmc|devil may cry|tomodachi|disney|naruto|one piece|dragon ball|persona|uncharted|killzone|wipeout)\b'
+    GAME_TERMS = r'\b(?:loose|cib|pal ita|pal eur|pal esp|remastered|steelbook|poster|gioco|giochi|juego|juegos|jeu|jeux|game|games|spiel|cartuccia|cartucce|cartridge|alimentatore|chargeur|charger|netzteil|custodia|funda|housse|case)\b'
 
-    def is_accessory_or_game(self, title: str, query: str = "") -> bool:
-        """Verifica se l'annuncio riguarda un gioco, alimentatore o custodia invece della console."""
+    def is_accessory_or_game(self, title: str, price: float, query: str = "") -> bool:
+        """Verifica se l'annuncio riguarda un gioco, alimentatore o custodia invece della console fisica."""
         lower_title = title.lower()
-        query_lower = query.lower()
+        q = query.lower()
 
-        # Verifica se la ricerca punta a una console
-        is_console_query = any(k in query_lower for k in ("3ds", "2ds", "vita", "psvita", "console", "switch", "ps5", "playstation"))
+        # Verifica pertinenza console
+        is_console_query = any(k in q for k in ("3ds", "2ds", "vita", "psvita", "console", "switch", "ps5", "playstation"))
         if not is_console_query:
             return self.is_accessory(title)
 
-        # Se il venditore specifica esplicitamente console + bundle, non è solo un gioco
+        # 1. Pertinenza Titolo: deve citare il modello esatto cercato
+        if "3ds" in q and "3ds" not in lower_title:
+            return True
+        if "2ds" in q and "2ds" not in lower_title:
+            return True
+        if ("vita" in q or "psvita" in q) and not any(k in lower_title for k in ("vita", "psvita", "pch-")):
+            return True
+
+        # 2. Prezzo minimo console: sotto i 45€ è al 99.9% un singolo gioco o accessorio
+        if price < 45.0:
+            return True
+
+        # Se il venditore specifica esplicitamente bundle console, lo teniamo
         if any(p in lower_title for p in ("console con", "console +", "console e ", "pack console", "bundle console")):
             return False
 
-        # Se il titolo inizia o contiene parole inequivocabili di giochi o accessori
-        for pattern in self.GAME_ACCESSORY_PATTERNS:
-            if re.search(pattern, lower_title):
-                # Se non ha la parola console esplicita, è sicuramente un gioco/accessorio
-                if "console" not in lower_title:
-                    return True
+        # 3. Controllo franchise di videogiochi e termini di gioco
+        if re.search(self.GAME_FRANCHISES, lower_title) or re.search(self.GAME_TERMS, lower_title):
+            if "console" not in lower_title:
+                return True
 
         return self.is_accessory(title)
 
@@ -202,17 +203,16 @@ class DealAnalyzer:
         if total_price <= 0:
             return 1.0
 
-        # Filtro soglia minima (es. console 3DS sotto i 35€ è sicuramente un gioco/accessorio)
-        effective_min = min_price or ((target_price * 0.35) if target_price and target_price >= 60.0 else None)
-        if effective_min and total_price < effective_min:
+        # Filtro soglia minima (solo se min_price è specificato)
+        if min_price and total_price < min_price:
             item.score = 1.0
             item.defect_severity = "ACCESSORY"
-            item.defect_labels = ["📦 SOLO GIOCO O ACCESSORIO"]
+            item.defect_labels = ["📦 PREZZO SOSPETTO / GIOCO / ACCESSORIO"]
             item.score_breakdown = {"reason": "prezzo troppo basso per essere la console completa"}
             return 1.0
 
         # Controllo se è solo un gioco o un accessorio
-        if self.is_accessory_or_game(item.title, query=item.search_query):
+        if self.is_accessory_or_game(item.title, price=total_price, query=item.search_query):
             item.score = 1.0
             item.defect_severity = "ACCESSORY"
             item.defect_labels = ["📦 SOLO GIOCO O ACCESSORIO"]
