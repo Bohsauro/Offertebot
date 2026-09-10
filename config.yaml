@@ -1,0 +1,174 @@
+# Configurazione di default per OfferteBot
+
+general:
+  default_check_interval_minutes: 15
+  default_min_score: 7.0
+  max_deals_per_command: 10
+  default_estimated_shipping_international: 9.99
+
+# Prodotti pre-configurati da monitorare (console richieste)
+default_searches:
+  - query: "New Nintendo 2DS XL"
+    target_price: 130.0
+    exclude_broken: false
+    enabled: true
+  - query: "New Nintendo 3DS XL"
+    target_price: 170.0
+    exclude_broken: false
+    enabled: true
+  - query: "New Nintendo 3DS"
+    target_price: 140.0
+    exclude_broken: false
+    enabled: true
+  - query: "Nintendo 3DS XL"
+    target_price: 100.0
+    exclude_broken: false
+    enabled: true
+  - query: "Nintendo 3DS"
+    target_price: 70.0
+    exclude_broken: false
+    enabled: true
+  - query: "PS Vita"
+    target_price: 100.0
+    exclude_broken: false
+    enabled: true
+
+# Dizionario parole chiave per il rilevamento danni e calcolo voto (1-10)
+damage_keywords:
+  critical:
+    penalty: 6.0
+    label: "🚨 DIFETTO GRAVE / PER RICAMBI"
+    keywords:
+      - "non funzionante"
+      - "per ricambi"
+      - "uso ricambi"
+      - "solo ricambi"
+      - "ricambi"
+      - "parti di ricambio"
+      - "da riparare"
+      - "da testare"
+      - "non testato"
+      - "non testata"
+      - "scheda madre bruciata"
+      - "bloccato icloud"
+      - "blocco icloud"
+      - "display rotto"
+      - "schermo rotto"
+      - "display spaccato"
+      - "non si accende"
+      - "non parte"
+      - "vetro rotto"
+      - "lcd rotto"
+      - "danno da acqua"
+      - "ossidato"
+      - "for parts"
+      - "not working"
+      - "broken"
+      - "defekt"
+      - "hors service"
+      - "pour pieces"
+      - "cerniera rotta"
+      - "cerniera spaccata"
+      - "non legge i giochi"
+      - "non legge giochi"
+      - "non legge cartucce"
+      - "slot rotto"
+      - "slot cartuccia rotto"
+      - "brickata"
+      - "bricked"
+
+  repairable:
+    penalty: 1.2
+    label: "🛠️ DIFETTO RIPARABILE (Tasti / Pulizia / Stick)"
+    keywords:
+      - "tasto non funziona"
+      - "tasti non funzionano"
+      - "tasto rotto"
+      - "tasti rotti"
+      - "tasto difettoso"
+      - "tasti difettosi"
+      - "tasto incastrato"
+      - "tasti incastrati"
+      - "tasto bloccato"
+      - "tasti bloccati"
+      - "tasto duro"
+      - "tasto l"
+      - "tasto r"
+      - "pulsante rotto"
+      - "pulsanti difettosi"
+      - "stick drift"
+      - "drift analogico"
+      - "analogico rotto"
+      - "analogico consumato"
+      - "gommino consumato"
+      - "levetta rotta"
+      - "levetta consumata"
+      - "da pulire"
+      - "da revisionare"
+      - "contatti sporchi"
+      - "polvere"
+      - "scocca graffiata"
+      - "scocca rovinata"
+      - "batteria da sostituire"
+      - "batteria esausta"
+      - "senza pennino"
+      - "senza stylus"
+      - "senza caricatore"
+      - "senza caricabatterie"
+      - "cerniera allentata"
+      - "cerniera con gioco"
+
+  moderate:
+    penalty: 2.5
+    label: "⚠️ DIFETTO SEGNALATO"
+    keywords:
+      - "crepa"
+      - "crepato"
+      - "linea sullo schermo"
+      - "linee su schermo"
+      - "pixel bruciati"
+      - "burn-in"
+      - "touch screen non funziona"
+      - "touch non va"
+      - "touch difettoso"
+      - "ghost touch"
+      - "ammaccatura"
+      - "ammaccato"
+      - "cracked"
+      - "dented"
+
+  minor_wear:
+    penalty: 0.8
+    label: "ℹ️ SEGNI DI USURA"
+    keywords:
+      - "segni di usura"
+      - "segno di usura"
+      - "micrograffi"
+      - "micro graffi"
+      - "graffi leggeri"
+      - "graffietti"
+      - "normale usura"
+      - "graffi d'uso"
+      - "usure"
+      - "light scratches"
+      - "normal wear"
+
+  mint_or_new:
+    bonus: 0.8
+    label: "✨ COME NUOVO / SIGILLATO"
+    keywords:
+      - "nuovo"
+      - "sigillato"
+      - "mai usato"
+      - "mai aperto"
+      - "come nuovo"
+      - "pari al nuovo"
+      - "condizioni perfette"
+      - "garanzia ufficiale"
+      - "con scontrino"
+      - "con fattura"
+      - "imballo originale"
+      - "brand new"
+      - "sealed"
+      - "mint condition"
+      - "wie neu"

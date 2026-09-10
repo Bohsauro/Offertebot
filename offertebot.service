@@ -1,0 +1,19 @@
+[Unit]
+Description=OfferteBot - Telegram Deals Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/OfferteBot
+ExecStart=/home/ubuntu/OfferteBot/venv/bin/python main.py
+Restart=always
+RestartSec=10
+EnvironmentFile=/home/ubuntu/OfferteBot/.env
+
+# Standard output and error to journalctl
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
