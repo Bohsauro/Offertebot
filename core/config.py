@@ -34,6 +34,8 @@ class Settings:
     def __init__(self):
         self.telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
         self.telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+        self.admin_chat_id: str = os.getenv("ADMIN_CHAT_ID", self.telegram_chat_id).strip()
+        self.gemini_api_key: str = os.getenv("GEMINI_API_KEY", "").strip()
         self.check_interval_minutes: int = int(os.getenv("CHECK_INTERVAL_MINUTES", "15"))
         self.min_alert_score: float = float(os.getenv("MIN_ALERT_SCORE", "7.0"))
         self.exclude_broken: bool = os.getenv("EXCLUDE_BROKEN", "false").lower() in ("true", "1", "yes")

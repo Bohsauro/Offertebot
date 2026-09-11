@@ -87,6 +87,7 @@ async def main():
         BotCommand("cerca", "🔍 Cerca subito un prodotto o console"),
         BotCommand("traccia", "📌 Aggiungi una ricerca da monitorare"),
         BotCommand("mieicerche", "📋 Visualizza e gestisci le tue ricerche"),
+        BotCommand("invita", "🎟️ Genera invito per un amico"),
         BotCommand("impostazioni", "⚙️ Mostra filtri e impostazioni"),
         BotCommand("help", "❓ Guida ai comandi")
     ]

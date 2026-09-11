@@ -19,6 +19,29 @@ class Database:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("PRAGMA journal_mode=WAL;")
             
+            # Tabella utenti autorizzati (sistema ad inviti)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    chat_id TEXT PRIMARY KEY,
+                    username TEXT,
+                    is_admin INTEGER DEFAULT 0,
+                    invited_by TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            # Tabella codici invito
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS invites (
+                    code TEXT PRIMARY KEY,
+                    created_by TEXT,
+                    used_by TEXT,
+                    is_used INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    used_at TIMESTAMP
+                );
+            """)
+
             # Tabella ricerche monitorate
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS tracked_searches (
@@ -29,11 +52,18 @@ class Database:
                     min_price REAL,
                     min_score REAL DEFAULT 7.0,
                     exclude_broken INTEGER DEFAULT 0,
+                    ai_rules TEXT,
                     is_active INTEGER DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_checked_at TIMESTAMP
                 );
             """)
+
+            # Aggiunge colonna ai_rules se non esiste già da precedenti installazioni
+            try:
+                await db.execute("ALTER TABLE tracked_searches ADD COLUMN ai_rules TEXT;")
+            except Exception:
+                pass
 
             # Tabella offerte viste / notificate
             await db.execute("""
@@ -61,6 +91,15 @@ class Database:
             await db.execute("CREATE INDEX IF NOT EXISTS idx_deals_score ON deals (score DESC);")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_deals_query ON deals (search_query);")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_tracked_active ON tracked_searches (is_active);")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_tracked_chat ON tracked_searches (chat_id);")
+
+            # Assicura che l'admin principale sia registrato e autorizzato
+            if settings.admin_chat_id:
+                await db.execute("""
+                    INSERT INTO users (chat_id, username, is_admin)
+                    VALUES (?, 'Admin', 1)
+                    ON CONFLICT(chat_id) DO UPDATE SET is_admin = 1;
+                """, (settings.admin_chat_id,))
 
             await db.commit()
             logger.info("Database SQLite inizializzato con successo.")
@@ -91,6 +130,58 @@ class Database:
             await db.commit()
             logger.info(f"Caricate {len(settings.default_searches)} ricerche predefinite.")
 
+    async def is_user_authorized(self, chat_id: str) -> bool:
+        """Verifica se l'utente ha accesso al bot (è admin o è stato invitato)."""
+        if str(chat_id) == str(settings.admin_chat_id):
+            return True
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("SELECT 1 FROM users WHERE chat_id = ?;", (str(chat_id),))
+            row = await cursor.fetchone()
+            return row is not None
+
+    async def is_admin(self, chat_id: str) -> bool:
+        """Verifica se l'utente è amministratore."""
+        if str(chat_id) == str(settings.admin_chat_id):
+            return True
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("SELECT is_admin FROM users WHERE chat_id = ?;", (str(chat_id),))
+            row = await cursor.fetchone()
+            return bool(row and row[0] == 1)
+
+    async def create_invite(self, created_by: str) -> str:
+        """Genera un nuovo codice invito univoco."""
+        import secrets
+        code = f"INV-{secrets.token_hex(4).upper()}"
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                INSERT INTO invites (code, created_by, is_used) VALUES (?, ?, 0);
+            """, (code, str(created_by)))
+            await db.commit()
+        return code
+
+    async def redeem_invite(self, code: str, chat_id: str, username: Optional[str] = None) -> bool:
+        """Riscatta un codice invito e registra il nuovo utente."""
+        clean_code = code.strip().upper()
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("SELECT created_by FROM invites WHERE code = ? AND is_used = 0;", (clean_code,))
+            row = await cursor.fetchone()
+            if not row:
+                return False
+
+            inviter = row[0]
+            # Segna invito come usato
+            await db.execute("""
+                UPDATE invites SET is_used = 1, used_by = ?, used_at = CURRENT_TIMESTAMP WHERE code = ?;
+            """, (str(chat_id), clean_code))
+
+            # Aggiunge utente
+            await db.execute("""
+                INSERT OR REPLACE INTO users (chat_id, username, is_admin, invited_by)
+                VALUES (?, ?, 0, ?);
+            """, (str(chat_id), username or "Amico", inviter))
+            await db.commit()
+            return True
+
     async def add_search(
         self,
         chat_id: str,
@@ -98,13 +189,15 @@ class Database:
         target_price: Optional[float] = None,
         min_price: Optional[float] = None,
         min_score: float = 7.0,
-        exclude_broken: bool = False
+        exclude_broken: bool = False,
+        ai_rules: Optional[Dict[str, Any]] = None
     ) -> int:
+        ai_rules_str = json.dumps(ai_rules, ensure_ascii=False) if ai_rules else None
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
-                INSERT INTO tracked_searches (chat_id, query, target_price, min_price, min_score, exclude_broken, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, 1);
-            """, (chat_id, query.strip(), target_price, min_price, min_score, 1 if exclude_broken else 0))
+                INSERT INTO tracked_searches (chat_id, query, target_price, min_price, min_score, exclude_broken, ai_rules, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1);
+            """, (str(chat_id), query.strip(), target_price, min_price, min_score, 1 if exclude_broken else 0, ai_rules_str))
             await db.commit()
             return cursor.lastrowid
 

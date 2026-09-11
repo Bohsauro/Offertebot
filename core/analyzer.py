@@ -151,17 +151,39 @@ class DealAnalyzer:
 
     GAME_FRANCHISES = r'\b(?:pokemon|pok[eé]mon|mario|zelda|luigi|yo-kai|yokai|spider-?man|last of us|god of war|gran turismo|demon slayer|one punch|fist of the north star|attack on titan|a\.o\.t|inazuma|monster hunter|fifa|pes|call of duty|gta|grand theft auto|assassin|resident evil|final fantasy|dragon quest|kingdom hearts|kirby|metroid|fire emblem|layton|sonic|crash bandicoot|spyro|bionicle|ratatouille|star wars|dmc|devil may cry|tomodachi|disney|naruto|one piece|dragon ball|persona|uncharted|killzone|wipeout)\b'
 
-    def is_accessory_or_game(self, title: str, price: float, query: str = "") -> bool:
-        """Verifica se l'annuncio riguarda un gioco, alimentatore o custodia invece della console fisica."""
+    def is_accessory_or_game(self, title: str, price: float, query: str = "", ai_rules: Optional[Dict[str, Any]] = None) -> bool:
+        """Verifica se l'annuncio riguarda un gioco, accessorio o prodotto non pertinente, supportando filtri AI o regole console."""
         lower_title = title.strip().lower()
         q = query.lower()
 
-        # Verifica pertinenza console
+        # 1. Se sono presenti regole generate dall'AI (Gemini) per questa ricerca, applicale
+        if ai_rules:
+            # Prezzo minimo plausibile determinato da Gemini
+            min_ai_price = float(ai_rules.get("min_price", 0.0))
+            if min_ai_price > 0 and price < min_ai_price:
+                return True
+
+            # Parole chiave di esclusione da Gemini (cover, ricambi, scatole, ecc.)
+            excluded_words = ai_rules.get("excluded_keywords", [])
+            for kw in excluded_words:
+                if kw and re.search(r'\b' + re.escape(kw.lower().strip()) + r'\b', lower_title):
+                    return True
+
+            # Se ci sono parole chiave obbligatorie (almeno una deve essere presente)
+            req_any = ai_rules.get("required_any_keywords", [])
+            if req_any and not any(r.lower() in lower_title for r in req_any):
+                return True
+
+        # 2. Controllo accessori generici sempre valido
+        if self.is_accessory(title):
+            return True
+
+        # 3. Controllo specifico per console retrogaming
         is_console_query = any(k in q for k in ("3ds", "2ds", "vita", "psvita", "console", "switch", "ps5", "playstation"))
         if not is_console_query:
-            return self.is_accessory(title)
+            return False
 
-        # 1. Modello esatto: evita che Nintendo DS Lite venga scambiato per 3DS
+        # Modello esatto: evita che Nintendo DS Lite venga scambiato per 3DS
         if "3ds" in q and not re.search(r'\b(?:3ds|3dsxl)\b', lower_title):
             return True
         if "2ds" in q and not re.search(r'\b(?:2ds|2dsxl)\b', lower_title):
@@ -169,31 +191,30 @@ class DealAnalyzer:
         if ("vita" in q or "psvita" in q) and not re.search(r'\b(?:ps\s*vita|psvita|playstation\s+vita|pch-\d+)\b', lower_title):
             return True
 
-        # 2. Prezzo minimo console: sotto i 45€ è al 99.9% un singolo gioco o accessorio
+        # Prezzo minimo console: sotto i 45€ è al 99.9% un singolo gioco o accessorio
         if price < 45.0:
             return True
 
-        # 3. Controllo parole disqualificanti (scatole vuote, schede madri, cover plate, ecc.)
+        # Controllo parole disqualificanti (scatole vuote, schede madri, cover plate, ecc.)
         if self.ACCESSORY_DISQUALIFIERS.search(lower_title):
             return True
 
-        # 4. Controllo indicatori generici di videogiochi
+        # Controllo indicatori generici di videogiochi
         if self.GAME_INDICATORS.search(lower_title):
             if not any(p in lower_title for p in ("console con", "console +", "console e ", "pack console", "bundle console")):
                 return True
 
-        # 5. La console DEVE iniziare con il nome della console o "Console ..."
-        # Questo elimina automaticamente tutti i giochi intitolati: "Odin Sphere - PS Vita", "The Sly Trilogy - PS Vita", ecc.
+        # La console DEVE iniziare con il nome della console o "Console ..."
         if not self.CONSOLE_START_PATTERN.search(lower_title):
             return True
 
-        # 6. Se menziona franchise di videogiochi senza essere un bundle esplicito
+        # Se menziona franchise di videogiochi senza essere un bundle esplicito
         if re.search(self.GAME_FRANCHISES, lower_title):
             if not any(p in lower_title for p in ("console con", "console +", "console e ", "pack console", "bundle console")):
                 if "console" not in lower_title:
                     return True
 
-        return self.is_accessory(title)
+        return False
 
     def is_accessory(self, text: str) -> bool:
         """Verifica se l'annuncio riguarda solo un accessorio (es. cover, pellicola, scatola vuota)."""
@@ -208,16 +229,11 @@ class DealAnalyzer:
         item: DealItem,
         target_price: Optional[float] = None,
         market_median_price: Optional[float] = None,
-        min_price: Optional[float] = None
+        min_price: Optional[float] = None,
+        ai_rules: Optional[Dict[str, Any]] = None
     ) -> float:
         """
         Calcola il voto da 1.0 a 10.0 sulla qualità complessiva dell'offerta.
-        Tiene conto di:
-        - Prezzo totale (Prezzo articolo + Spedizione)
-        - Rapporto con il Prezzo Target (se specificato) oppure Mediana di Mercato
-        - Penalità per difetti rilevati
-        - Bonus per prodotti sigillati o pari al nuovo
-        - Rilevamento giochi, alimentatori e accessori ingannevoli
         """
         # Assicuriamo che la spedizione sia calcolata
         if item.is_international and item.shipping_cost == 0.0:
@@ -231,65 +247,59 @@ class DealAnalyzer:
         if total_price <= 0:
             return 1.0
 
-        # Filtro soglia minima (solo se min_price è specificato)
-        if min_price and total_price < min_price:
+        # Prezzo minimo da ai_rules se disponibile
+        effective_min_price = min_price
+        if ai_rules and ai_rules.get("min_price"):
+            effective_min_price = max(effective_min_price or 0.0, float(ai_rules["min_price"]))
+
+        # Filtro soglia minima
+        if effective_min_price and total_price < effective_min_price:
             item.score = 1.0
             item.defect_severity = "ACCESSORY"
-            item.defect_labels = ["📦 PREZZO SOSPETTO / GIOCO / ACCESSORIO"]
-            item.score_breakdown = {"reason": "prezzo troppo basso per essere la console completa"}
+            item.defect_labels = ["📦 PREZZO SOSPETTO / ACCESSORIO"]
+            item.score_breakdown = {"reason": "prezzo troppo basso per essere il prodotto intero"}
             return 1.0
 
-        # Controllo se è solo un gioco o un accessorio
-        if self.is_accessory_or_game(item.title, price=total_price, query=item.search_query):
+        # Controllo se è solo un gioco o un accessorio (con ai_rules)
+        if self.is_accessory_or_game(item.title, price=total_price, query=item.search_query, ai_rules=ai_rules):
             item.score = 1.0
             item.defect_severity = "ACCESSORY"
-            item.defect_labels = ["📦 SOLO GIOCO O ACCESSORIO"]
-            item.score_breakdown = {"reason": "annuncio identificato come gioco o accessorio"}
+            item.defect_labels = ["📦 ACCESSORIO / GIOCO / PARTE DI RICAMBIO"]
+            item.score_breakdown = {"reason": "rilevato come accessorio, gioco o ricambio"}
             return 1.0
 
-        # Rilevamento difetti
-        labels, severity, penalty, bonus = self.detect_conditions(item)
+        # Analisi semantica dei difetti nella descrizione e nel titolo
+        combined_text = f"{item.title} {item.description} {item.condition_text}"
+        labels, severity, penalty, bonus = self.extract_defects(combined_text)
+
         item.defect_labels = labels
         item.defect_severity = severity
 
-        # Calcolo punteggio base sul prezzo
+        # Prezzo di riferimento: target_price se impostato, altrimenti mediana di mercato
         reference_price = target_price or market_median_price
-        base_score = 6.0  # Valutazione neutra di partenza
 
         if reference_price and reference_price > 0:
             ratio = total_price / reference_price
-
             if ratio <= 0.40:
-                # Oltre il 60% di sconto
                 base_score = 10.0
             elif ratio <= 0.60:
-                # Tra 40% e 60% di sconto
-                base_score = 9.0 + (0.60 - ratio) * 5.0  # 9.0 -> 10.0
+                base_score = 9.5
             elif ratio <= 0.80:
-                # Tra 20% e 40% di sconto
-                base_score = 7.5 + (0.80 - ratio) * 7.5  # 7.5 -> 9.0
+                base_score = 9.0
             elif ratio <= 1.00:
-                # Tra 0% e 20% di sconto
-                base_score = 6.0 + (1.00 - ratio) * 7.5  # 6.0 -> 7.5
+                base_score = 8.0 - (ratio - 0.80) * 5.0
             elif ratio <= 1.20:
-                # Fino al 20% sopra il budget
-                base_score = 6.0 - (ratio - 1.00) * 12.5  # 6.0 -> 3.5
+                base_score = 7.0 - (ratio - 1.00) * 10.0
             else:
-                # Molto al di sopra del budget
                 base_score = max(1.0, 3.5 - (ratio - 1.20) * 5.0)
         else:
-            # Senza riferimento, valutiamo come prezzo medio
             base_score = 6.5
 
-        # Applicazione penalità danni e bonus condizioni
         final_score = base_score - penalty + bonus
 
-        # Se il prodotto ha un difetto critico ("non funzionante", "per ricambi"),
-        # il punteggio non può superare 3.5, anche se costasse 10€!
         if severity == "CRITICAL":
             final_score = min(final_score, 3.5)
 
-        # Clamping tra 1.0 e 10.0
         final_score = max(1.0, min(10.0, final_score))
         final_score = round(final_score, 1)
 
@@ -310,16 +320,15 @@ class DealAnalyzer:
         self,
         items: List[DealItem],
         target_price: Optional[float] = None,
-        min_price: Optional[float] = None
+        min_price: Optional[float] = None,
+        ai_rules: Optional[Dict[str, Any]] = None
     ) -> List[DealItem]:
         """
-        Analizza un insieme di offerte calcolando la mediana dei prezzi (se target_price non c'è)
-        e assegnando a ciascun articolo il punteggio finale e le etichette di stato.
+        Analizza un insieme di offerte calcolando la mediana dei prezzi e assegnando i voti.
         """
         if not items:
             return []
 
-        # Calcolo della mediana di mercato se target_price non è fornito
         valid_prices = sorted([it.total_price for it in items if it.total_price > 0])
         market_median = None
         if valid_prices:
@@ -327,9 +336,14 @@ class DealAnalyzer:
             market_median = valid_prices[mid] if len(valid_prices) % 2 != 0 else (valid_prices[mid - 1] + valid_prices[mid]) / 2.0
 
         for item in items:
-            self.calculate_score(item, target_price=target_price, market_median_price=market_median, min_price=min_price)
+            self.calculate_score(
+                item,
+                target_price=target_price,
+                market_median_price=market_median,
+                min_price=min_price,
+                ai_rules=ai_rules
+            )
 
-        # Ordina per punteggio decrescente (le migliori offerte per prime)
         items.sort(key=lambda x: x.score, reverse=True)
         return items
 

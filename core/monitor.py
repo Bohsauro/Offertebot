@@ -53,7 +53,13 @@ class DealsMonitor:
             if chat_id == "default" and settings.telegram_chat_id:
                 chat_id = settings.telegram_chat_id
 
-            logger.info(f"Controllo offerte per: '{query}' (Target: {target_price}€, MinScore: {min_score})")
+            ai_rules_raw = search.get("ai_rules")
+            ai_rules = None
+            if ai_rules_raw:
+                try:
+                    ai_rules = json.loads(ai_rules_raw) if isinstance(ai_rules_raw, str) else ai_rules_raw
+                except Exception:
+                    ai_rules = None
 
             try:
                 deals = await scraper_manager.search_all(
@@ -61,6 +67,7 @@ class DealsMonitor:
                     target_price=target_price,
                     min_price=search.get("min_price"),
                     exclude_broken=exclude_broken,
+                    ai_rules=ai_rules,
                     max_results_per_platform=15
                 )
 

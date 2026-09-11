@@ -68,30 +68,99 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
     user_name = update.effective_user.first_name if update.effective_user else "Utente"
+
+    # Controllo se l'utente ha avviato il bot con un deep link di invito (es. /start INV-XXXXXX)
+    if context.args:
+        invite_code = context.args[0].strip()
+        redeemed = await db.redeem_invite(invite_code, chat_id, username=user_name)
+        if redeemed:
+            await update.message.reply_text(
+                f"🎉 <b>Invito riscattato con successo!</b>\n"
+                f"Benvenuto su OfferteBot, <b>{user_name}</b>! Da ora hai accesso completo e privato a tutte le funzioni.",
+                parse_mode=ParseMode.HTML
+            )
+
+    # Verifica autorizzazione
+    is_authorized = await db.is_user_authorized(chat_id)
+    if not is_authorized:
+        await update.message.reply_text(
+            f"🔒 <b>ACCESSO RISERVATO - SOLO SU INVITO</b>\n\n"
+            f"Ciao <b>{user_name}</b>! Questo bot è attualmente privato e accessibile esclusivamente su invito.\n\n"
+            f"Se hai ricevuto un codice invito da un amico o dall'amministratore, riscatta il tuo accesso digitando:\n"
+            f"<code>/riscatta CODICE-INVITO</code>\n\n"
+            f"<i>Il tuo Chat ID Telegram è: <code>{chat_id}</code></i>",
+            parse_mode=ParseMode.HTML
+        )
+        return
+
     msg = (
         f"👋 Ciao <b>{user_name}</b>! Benvenuto su <b>OfferteBot</b> 🤖\n\n"
         f"Questo bot monitora per te le migliori offerte su <b>usato e nuovo</b> "
-        f"(Subito.it, Vinted, eBay, Wallapop e siti esteri) con <b>filtro rigoroso anti-giochi e anti-cover</b>!\n\n"
+        f"(Subito.it, Vinted, eBay, Wallapop) con <b>intelligenza artificiale Google Gemini</b> per escludere accessori, cover e parti di ricambio!\n\n"
         f"<b>Funzionalità principali:</b>\n"
+        f"• 🧠 <b>Filtro Universale Gemini AI</b>: monitora qualsiasi cosa (console, smartphone, GPU, foto) senza falsi positivi.\n"
         f"• 💰 <b>Prezzo Totale Trasparente</b>: calcola sempre prezzo articolo + spedizione.\n"
-        f"• 🔍 <b>Analisi Danni e Tasti</b>: rileva tasti rotti, stick drift o danni da riparare.\n"
-        f"• 🏆 <b>Voto da 1 a 10</b>: calcola la convenienza reale dell'offerta.\n"
-        f"• 🚨 <b>Alert Automatici</b>: ti avvisa all'istante quando esce un affare.\n\n"
+        f"• 🔍 <b>Analisi Danni e Tasti</b>: rileva tasti rotti, difetti o opportunità di riparazione fai-da-te.\n"
+        f"• 🏆 <b>Voto da 1 a 10</b>: calcola la convenienza reale rispetto al tuo budget.\n"
+        f"• 🚨 <b>Alert Privati Istantanei</b>: notifica solo te sulle tue ricerche personali.\n\n"
         f"<b>Comandi principali:</b>\n"
         f"📱 /menu — <b>Menu interattivo a pulsanti</b>\n"
         f"⭐ /offerte — Mostra le migliori occasioni trovate\n"
-        f"🔍 /cerca <code>&lt;console&gt; [budget]</code> — Cerca subito dal vivo\n"
-        f"📌 /traccia <code>&lt;console&gt; [budget]</code> — Aggiunge monitoraggio automatico\n"
-        f"📋 /mieicerche — Gestisci le ricerche attive\n"
+        f"🔍 /cerca <code>&lt;prodotto&gt; [budget]</code> — Cerca subito dal vivo\n"
+        f"📌 /traccia <code>&lt;prodotto&gt; [budget]</code> — Aggiunge monitoraggio con filtri AI\n"
+        f"📋 /mieicerche — Gestisci le tue ricerche attive\n"
         f"⚙️ /impostazioni — Mostra parametri e filtri\n\n"
         f"<i>Tocca il pulsante qui sotto per aprire il menu rapido:</i>"
     )
     await update.message.reply_text(msg, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
 
 
-async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await start_handler(update, context)
+async def invite_code_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    user_name = update.effective_user.first_name if update.effective_user else "Utente"
+
+    if not context.args:
+        await update.message.reply_text("⚠️ Inserisci il codice invito!\nEsempio: <code>/riscatta INV-1234ABCD</code>", parse_mode=ParseMode.HTML)
+        return
+
+    code = context.args[0].strip()
+    redeemed = await db.redeem_invite(code, chat_id, username=user_name)
+    if redeemed:
+        await update.message.reply_text(
+            f"🎉 <b>Congratulazioni {user_name}!</b>\n"
+            f"Il codice è valido. Il tuo account è stato autorizzato!\n\n"
+            f"Digita /menu per iniziare a monitorare i tuoi prodotti.",
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode=ParseMode.HTML
+        )
+    else:
+        await update.message.reply_text(
+            "❌ <b>Codice non valido o già utilizzato.</b>\n"
+            "Verifica con chi ti ha invitato di aver digitato il codice corretto.",
+            parse_mode=ParseMode.HTML
+        )
+
+
+async def generate_invite_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    is_adm = await db.is_admin(chat_id)
+    if not is_adm:
+        await update.message.reply_text("⛔ Questo comando è riservato all'amministratore del bot.")
+        return
+
+    code = await db.create_invite(created_by=chat_id)
+    bot_username = (await context.bot.get_me()).username
+    invite_link = f"https://t.me/{bot_username}?start={code}"
+
+    await update.message.reply_text(
+        f"🎟️ <b>NUOVO INVITO GENERATO!</b>\n\n"
+        f"🔑 <b>Codice:</b> <code>{code}</code>\n"
+        f"🔗 <b>Link diretto per il tuo amico:</b>\n{invite_link}\n\n"
+        f"<i>Il link autorizzerà automaticamente il tuo amico non appena premerà 'Avvia' su Telegram.</i>",
+        parse_mode=ParseMode.HTML
+    )
 
 
 async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -171,6 +240,10 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     chat_id = str(update.effective_chat.id)
+    if not await db.is_user_authorized(chat_id):
+        await update.message.reply_text("🔒 Devi prima riscattare un invito per usare questo comando con <code>/riscatta CODICE</code>.", parse_mode=ParseMode.HTML)
+        return
+
     full_text = " ".join(context.args)
     target_price: Optional[float] = None
 
@@ -184,22 +257,39 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         query = full_text
 
+    wait_msg = await update.message.reply_text(
+        f"🤖 <b>Analisi AI in corso...</b>\n"
+        f"<i>Google Gemini sta elaborando le regole ottimali di filtraggio per '{query}'...</i>",
+        parse_mode=ParseMode.HTML
+    )
+
+    from core.ai_rules import generate_search_rules
+    ai_rules = await generate_search_rules(query=query, target_price=target_price)
+
+    min_price_val = float(ai_rules.get("min_price", 0.0)) if ai_rules else None
+
     search_id = await db.add_search(
         chat_id=chat_id,
         query=query,
         target_price=target_price,
+        min_price=min_price_val,
         min_score=settings.min_alert_score,
-        exclude_broken=settings.exclude_broken
+        exclude_broken=settings.exclude_broken,
+        ai_rules=ai_rules
     )
 
     price_desc = f"a max <b>€ {target_price:.2f}</b>" if target_price else "a qualsiasi prezzo conveniente"
-    await update.message.reply_text(
-        f"✅ Ricerca monitorata aggiunta con successo!\n\n"
+    excl_preview = ", ".join(ai_rules.get("excluded_keywords", [])[:4]) if ai_rules else "accessori e ricambi"
+
+    await wait_msg.edit_text(
+        f"✅ <b>Ricerca monitorata aggiunta con successo!</b>\n\n"
         f"📌 <b>ID:</b> #{search_id}\n"
         f"📦 <b>Prodotto:</b> {query}\n"
         f"🎯 <b>Budget target:</b> {price_desc}\n"
-        f"⭐ <b>Voto minimo per alert:</b> {settings.min_alert_score}/10\n\n"
-        f"OfferteBot ti invierà un messaggio non appena verrà trovato un affare!",
+        f"🧠 <b>Filtro AI:</b> Categoria <i>{ai_rules.get('category', 'generica')}</i>\n"
+        f"🛡️ <b>Esclusioni automatiche:</b> {excl_preview}...\n"
+        f"⭐ <b>Voto minimo alert:</b> {settings.min_alert_score}/10\n\n"
+        f"OfferteBot ti invierà un alert privato non appena troverà una vera occasione!",
         parse_mode=ParseMode.HTML
     )
 
@@ -471,6 +561,8 @@ def register_handlers(app):
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("menu", menu_handler))
     app.add_handler(CommandHandler("help", help_handler))
+    app.add_handler(CommandHandler("riscatta", invite_code_handler))
+    app.add_handler(CommandHandler("invita", generate_invite_handler))
     app.add_handler(CommandHandler("cerca", search_handler))
     app.add_handler(CommandHandler("traccia", track_handler))
     app.add_handler(CommandHandler("mieicerche", my_searches_handler))
