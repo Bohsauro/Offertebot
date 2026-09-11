@@ -269,8 +269,7 @@ class DealAnalyzer:
             return 1.0
 
         # Analisi semantica dei difetti nella descrizione e nel titolo
-        combined_text = f"{item.title} {item.description} {item.condition_text}"
-        labels, severity, penalty, bonus = self.extract_defects(combined_text)
+        labels, severity, penalty, bonus = self.detect_conditions(item)
 
         item.defect_labels = labels
         item.defect_severity = severity
