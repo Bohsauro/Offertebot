@@ -131,12 +131,29 @@ class DealAnalyzer:
 
         return labels, highest_severity, total_penalty, total_bonus
 
+    # Prefissi ammessi per una vera console (il titolo deve iniziare con uno di questi)
+    CONSOLE_START_PATTERN = re.compile(
+        r'^(?:console\b|nintendo\b|new\s+nintendo\b|new\s*3ds\b|new\s*2ds\b|3ds\b|2ds\b|ps\s*vita\b|psvita\b|playstation\s+vita\b|sony\s+ps\s*vita\b|sony\s+playstation\s+vita\b|sony\s+psvita\b|pch-\d+|lotto\s+console\b)',
+        re.IGNORECASE
+    )
+
+    # Parole che indicano che NON è una console anche se contiene il nome console (scatole vuote, schede madri, cover plate, ecc.)
+    ACCESSORY_DISQUALIFIERS = re.compile(
+        r'\b(?:bo[iî]te\s+vide|scatola\s+vuota|empty\s+box|caja\s+vac[ií]a|solo\s+scatola|bo[iî]te\s+originale|motherboard|scheda\s+madre|carte\s+m[eè]re|placa\s+base|faceplate|cover\s+plate|plate\s+pour|piastra|alimentatore|caricabatterie|charger|chargeur|netzteil|custodia|funda|housse|pochette|cavo|cable|kabel|pennino|stylus|protector|pellicola|vetro\s+temperato|solo\s+gioco|solo\s+cartuccia|lotto\s+videogiochi|lotto\s+giochi|lot\s+de\s+jeux|lot\s+jeux|lote\s+juegos)\b',
+        re.IGNORECASE
+    )
+
+    # Termini che indicano che è un videogioco
+    GAME_INDICATORS = re.compile(
+        r'\b(?:videogioco|videogiochi|videgame|videogames|jeu\s+vid[eé]o|jeux\s+vid[eé]o|videojuego|videojuegos|cartuccia|cartucce|cartridge|cib|loose|steelbook)\b',
+        re.IGNORECASE
+    )
+
     GAME_FRANCHISES = r'\b(?:pokemon|pok[eé]mon|mario|zelda|luigi|yo-kai|yokai|spider-?man|last of us|god of war|gran turismo|demon slayer|one punch|fist of the north star|attack on titan|a\.o\.t|inazuma|monster hunter|fifa|pes|call of duty|gta|grand theft auto|assassin|resident evil|final fantasy|dragon quest|kingdom hearts|kirby|metroid|fire emblem|layton|sonic|crash bandicoot|spyro|bionicle|ratatouille|star wars|dmc|devil may cry|tomodachi|disney|naruto|one piece|dragon ball|persona|uncharted|killzone|wipeout)\b'
-    GAME_TERMS = r'\b(?:loose|cib|pal ita|pal eur|pal esp|remastered|steelbook|poster|gioco|giochi|juego|juegos|jeu|jeux|game|games|spiel|cartuccia|cartucce|cartridge|alimentatore|chargeur|charger|netzteil|custodia|funda|housse|case)\b'
 
     def is_accessory_or_game(self, title: str, price: float, query: str = "") -> bool:
         """Verifica se l'annuncio riguarda un gioco, alimentatore o custodia invece della console fisica."""
-        lower_title = title.lower()
+        lower_title = title.strip().lower()
         q = query.lower()
 
         # Verifica pertinenza console
@@ -144,26 +161,37 @@ class DealAnalyzer:
         if not is_console_query:
             return self.is_accessory(title)
 
-        # 1. Pertinenza Titolo: deve citare il modello esatto cercato
-        if "3ds" in q and "3ds" not in lower_title:
+        # 1. Modello esatto: evita che Nintendo DS Lite venga scambiato per 3DS
+        if "3ds" in q and not re.search(r'\b(?:3ds|3dsxl)\b', lower_title):
             return True
-        if "2ds" in q and "2ds" not in lower_title:
+        if "2ds" in q and not re.search(r'\b(?:2ds|2dsxl)\b', lower_title):
             return True
-        if ("vita" in q or "psvita" in q) and not any(k in lower_title for k in ("vita", "psvita", "pch-")):
+        if ("vita" in q or "psvita" in q) and not re.search(r'\b(?:ps\s*vita|psvita|playstation\s+vita|pch-\d+)\b', lower_title):
             return True
 
         # 2. Prezzo minimo console: sotto i 45€ è al 99.9% un singolo gioco o accessorio
         if price < 45.0:
             return True
 
-        # Se il venditore specifica esplicitamente bundle console, lo teniamo
-        if any(p in lower_title for p in ("console con", "console +", "console e ", "pack console", "bundle console")):
-            return False
+        # 3. Controllo parole disqualificanti (scatole vuote, schede madri, cover plate, ecc.)
+        if self.ACCESSORY_DISQUALIFIERS.search(lower_title):
+            return True
 
-        # 3. Controllo franchise di videogiochi e termini di gioco
-        if re.search(self.GAME_FRANCHISES, lower_title) or re.search(self.GAME_TERMS, lower_title):
-            if "console" not in lower_title:
+        # 4. Controllo indicatori generici di videogiochi
+        if self.GAME_INDICATORS.search(lower_title):
+            if not any(p in lower_title for p in ("console con", "console +", "console e ", "pack console", "bundle console")):
                 return True
+
+        # 5. La console DEVE iniziare con il nome della console o "Console ..."
+        # Questo elimina automaticamente tutti i giochi intitolati: "Odin Sphere - PS Vita", "The Sly Trilogy - PS Vita", ecc.
+        if not self.CONSOLE_START_PATTERN.search(lower_title):
+            return True
+
+        # 6. Se menziona franchise di videogiochi senza essere un bundle esplicito
+        if re.search(self.GAME_FRANCHISES, lower_title):
+            if not any(p in lower_title for p in ("console con", "console +", "console e ", "pack console", "bundle console")):
+                if "console" not in lower_title:
+                    return True
 
         return self.is_accessory(title)
 

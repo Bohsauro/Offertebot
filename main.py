@@ -78,6 +78,24 @@ async def main():
     
     logger.info("Avvio di OfferteBot...")
     await app.initialize()
+
+    # Registra comandi nel menu nativo di Telegram
+    from telegram import BotCommand
+    commands = [
+        BotCommand("menu", "📱 Apri il menu a pulsanti interattivo"),
+        BotCommand("offerte", "⭐ Mostra le migliori occasioni attuali"),
+        BotCommand("cerca", "🔍 Cerca subito un prodotto o console"),
+        BotCommand("traccia", "📌 Aggiungi una ricerca da monitorare"),
+        BotCommand("mieicerche", "📋 Visualizza e gestisci le tue ricerche"),
+        BotCommand("impostazioni", "⚙️ Mostra filtri e impostazioni"),
+        BotCommand("help", "❓ Guida ai comandi")
+    ]
+    try:
+        await app.bot.set_my_commands(commands)
+        logger.info("Comandi registrati con successo nel menu Telegram!")
+    except Exception as e:
+        logger.warning(f"Impossibile registrare set_my_commands: {e}")
+
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
 

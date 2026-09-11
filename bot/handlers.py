@@ -17,26 +17,77 @@ from bot.formatters import format_deal_message, get_deal_keyboard
 logger = logging.getLogger(__name__)
 
 
+def get_main_menu_keyboard() -> InlineKeyboardMarkup:
+    buttons = [
+        [
+            InlineKeyboardButton("🏆 Migliori Offerte", callback_data="menu:offers"),
+            InlineKeyboardButton("📋 Le Mie Ricerche", callback_data="menu:searches")
+        ],
+        [
+            InlineKeyboardButton("🔍 Cerca Subito una Console", callback_data="menu:quick_search_menu"),
+        ],
+        [
+            InlineKeyboardButton("⚙️ Impostazioni", callback_data="menu:settings"),
+            InlineKeyboardButton("❓ Guida Comandi", callback_data="menu:help")
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_quick_search_keyboard() -> InlineKeyboardMarkup:
+    buttons = [
+        [
+            InlineKeyboardButton("🎮 New 3DS XL", callback_data="qsearch:New Nintendo 3DS XL"),
+            InlineKeyboardButton("🎮 New 2DS XL", callback_data="qsearch:New Nintendo 2DS XL")
+        ],
+        [
+            InlineKeyboardButton("🎮 New 3DS", callback_data="qsearch:New Nintendo 3DS"),
+            InlineKeyboardButton("🎮 3DS XL", callback_data="qsearch:Nintendo 3DS XL")
+        ],
+        [
+            InlineKeyboardButton("🎮 3DS Standard", callback_data="qsearch:Nintendo 3DS"),
+            InlineKeyboardButton("🎮 PS Vita", callback_data="qsearch:PS Vita")
+        ],
+        [
+            InlineKeyboardButton("🔙 Torna al Menu Principale", callback_data="menu:main")
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = (
+        "📱 <b>PANNELLO DI CONTROLLO - OFFERTEBOT</b> 🤖\n\n"
+        "Seleziona un'azione rapida toccando i pulsanti qui sotto:"
+    )
+    markup = get_main_menu_keyboard()
+    if update.message:
+        await update.message.reply_text(msg, reply_markup=markup, parse_mode=ParseMode.HTML)
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(msg, reply_markup=markup, parse_mode=ParseMode.HTML)
+
+
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = update.effective_user.first_name if update.effective_user else "Utente"
     msg = (
         f"👋 Ciao <b>{user_name}</b>! Benvenuto su <b>OfferteBot</b> 🤖\n\n"
         f"Questo bot monitora per te le migliori offerte su <b>usato e nuovo</b> "
-        f"(Subito.it, Vinted, eBay, Wallapop e siti esteri).\n\n"
+        f"(Subito.it, Vinted, eBay, Wallapop e siti esteri) con <b>filtro rigoroso anti-giochi e anti-cover</b>!\n\n"
         f"<b>Funzionalità principali:</b>\n"
-        f"• 💰 <b>Calcolo Spese Totali</b>: calcola sempre prezzo + spedizione.\n"
-        f"• 🔍 <b>Analisi Danni e Difetti</b>: legge titolo e descrizione rilevando schermi rotti, guasti hw, blocchi o semplice usura.\n"
-        f"• 🏆 <b>Voto da 1 a 10</b>: stima la convenienza oggettiva dell'affare.\n"
-        f"• 🚨 <b>Alert Automatici</b>: ti avvisa all'istante quando esce un'offerta con voto alto.\n\n"
-        f"<b>Comandi disponibili:</b>\n"
-        f"🔍 /cerca <code>&lt;prodotto&gt; [prezzo_target]</code> — Cerca subito dal vivo\n"
-        f"📌 /traccia <code>&lt;prodotto&gt; [prezzo_target]</code> — Aggiunge monitoraggio automatico\n"
-        f"📋 /mieicerche — Visualizza e gestisci i prodotti monitorati\n"
-        f"⭐ /offerte <code>[filtro]</code> — Mostra le migliori occasioni trovate\n"
-        f"⚙️ /impostazioni — Mostra le impostazioni attuali\n"
-        f"❓ /help — Mostra questo messaggio di aiuto"
+        f"• 💰 <b>Prezzo Totale Trasparente</b>: calcola sempre prezzo articolo + spedizione.\n"
+        f"• 🔍 <b>Analisi Danni e Tasti</b>: rileva tasti rotti, stick drift o danni da riparare.\n"
+        f"• 🏆 <b>Voto da 1 a 10</b>: calcola la convenienza reale dell'offerta.\n"
+        f"• 🚨 <b>Alert Automatici</b>: ti avvisa all'istante quando esce un affare.\n\n"
+        f"<b>Comandi principali:</b>\n"
+        f"📱 /menu — <b>Menu interattivo a pulsanti</b>\n"
+        f"⭐ /offerte — Mostra le migliori occasioni trovate\n"
+        f"🔍 /cerca <code>&lt;console&gt; [budget]</code> — Cerca subito dal vivo\n"
+        f"📌 /traccia <code>&lt;console&gt; [budget]</code> — Aggiunge monitoraggio automatico\n"
+        f"📋 /mieicerche — Gestisci le ricerche attive\n"
+        f"⚙️ /impostazioni — Mostra parametri e filtri\n\n"
+        f"<i>Tocca il pulsante qui sotto per aprire il menu rapido:</i>"
     )
-    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+    await update.message.reply_text(msg, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -250,7 +301,155 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
     data = query.data
     chat_id = str(update.effective_chat.id)
 
-    if data.startswith("toggle:"):
+    if data == "menu:main":
+        msg = (
+            "📱 <b>PANNELLO DI CONTROLLO - OFFERTEBOT</b> 🤖\n\n"
+            "Seleziona un'azione rapida toccando i pulsanti qui sotto:"
+        )
+        await query.edit_message_text(msg, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
+
+    elif data == "menu:quick_search_menu":
+        msg = (
+            "🔍 <b>RICERCA RAPIDA CONSOLE</b> 🎮\n\n"
+            "Tocca una delle console qui sotto per scansionare istantaneamente tutti i marketplace:"
+        )
+        await query.edit_message_text(msg, reply_markup=get_quick_search_keyboard(), parse_mode=ParseMode.HTML)
+
+    elif data.startswith("qsearch:"):
+        console_name = data.split(":", 1)[1]
+        await query.edit_message_text(
+            f"🔎 Scansione in corso per <b>'{console_name}'</b>...\n"
+            f"<i>Controllo Subito, Vinted, eBay e Wallapop con filtro anti-giochi...</i>",
+            parse_mode=ParseMode.HTML
+        )
+        try:
+            deals = await scraper_manager.search_all(
+                query=console_name,
+                exclude_broken=False,
+                max_results_per_platform=10
+            )
+            if not deals:
+                back_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ricerca Rapida", callback_data="menu:quick_search_menu")]])
+                await query.edit_message_text(
+                    f"❌ Nessuna offerta trovata per <b>'{console_name}'</b> al momento.",
+                    reply_markup=back_keyboard,
+                    parse_mode=ParseMode.HTML
+                )
+                return
+
+            await query.edit_message_text(
+                f"✅ Scansione completata per <b>'{console_name}'</b>! Ecco i migliori risultati:",
+                parse_mode=ParseMode.HTML
+            )
+            for d in deals[:5]:
+                text = format_deal_message(d, is_alert=False)
+                markup = get_deal_keyboard(d.url)
+                await query.message.reply_text(
+                    text,
+                    reply_markup=markup,
+                    parse_mode=ParseMode.HTML
+                )
+        except Exception as e:
+            logger.error(f"Errore durante quick search {console_name}: {e}", exc_info=True)
+            await query.edit_message_text("❌ Si è verificato un errore durante la ricerca.")
+
+    elif data == "menu:offers":
+        deals = await db.get_top_deals(min_score=6.0, limit=6)
+        if not deals:
+            back_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Menu Principale", callback_data="menu:main")]])
+            await query.edit_message_text(
+                "ℹ️ Nessuna offerta registrata attualmente nel database.\n"
+                "Usa 🔍 <b>Cerca Subito una Console</b> per scansionare dal vivo!",
+                reply_markup=back_keyboard,
+                parse_mode=ParseMode.HTML
+            )
+            return
+
+        await query.edit_message_text("🏆 <b>Migliori Offerte Attuali:</b>", parse_mode=ParseMode.HTML)
+        for d in deals:
+            from scrapers.base import DealItem
+            import json
+
+            item = DealItem(
+                id=d["id"],
+                title=d["title"],
+                price=d["price"],
+                shipping_cost=d["shipping_cost"],
+                total_price=d["total_price"],
+                url=d["url"],
+                image_url=d["image_url"],
+                source=d["source"],
+                description=d["description"],
+                location=d["location"] or "Italia",
+                score=d["score"],
+                defect_severity=d["defect_severity"] or "NONE",
+                defect_labels=json.loads(d["defect_labels"]) if d["defect_labels"] else []
+            )
+            text = format_deal_message(item, is_alert=False)
+            markup = get_deal_keyboard(item.url)
+            await query.message.reply_text(
+                text,
+                reply_markup=markup,
+                parse_mode=ParseMode.HTML
+            )
+
+    elif data == "menu:searches":
+        searches = await db.get_searches_by_chat_id(chat_id)
+        if not searches:
+            back_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Menu Principale", callback_data="menu:main")]])
+            await query.edit_message_text(
+                "ℹ️ Non hai ancora ricerche attive.\n"
+                "Usa <code>/traccia &lt;prodotto&gt; [prezzo]</code> per aggiungerne una!",
+                reply_markup=back_keyboard,
+                parse_mode=ParseMode.HTML
+            )
+            return
+
+        await query.edit_message_text("📋 <b>Le tue ricerche monitorate:</b>", parse_mode=ParseMode.HTML)
+        for s in searches:
+            status_icon = "🟢 Attivo" if s["is_active"] else "⏸️ In Pausa"
+            budget = f"€ {s['target_price']:.2f}" if s["target_price"] else "N/D"
+            text = (
+                f"📌 <b>#{s['id']} — {s['query']}</b>\n"
+                f"🎯 Target: <b>{budget}</b> | Stato: {status_icon}\n"
+                f"⭐ Voto minimo: {s['min_score']}/10"
+            )
+            toggle_label = "⏸️ Metti in Pausa" if s["is_active"] else "▶️ Riattiva"
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(toggle_label, callback_data=f"toggle:{s['id']}"),
+                    InlineKeyboardButton("🗑️ Elimina", callback_data=f"delete:{s['id']}")
+                ]
+            ])
+            await query.message.reply_text(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+
+    elif data == "menu:settings":
+        msg = (
+            f"⚙️ <b>Impostazioni Attuali di OfferteBot:</b>\n\n"
+            f"⏱️ <b>Frequenza Scansioni:</b> ogni {settings.check_interval_minutes} minuti\n"
+            f"⭐ <b>Soglia Minima Alert:</b> {settings.min_alert_score}/10\n"
+            f"🛡️ <b>Escludi Prodotti Rotti:</b> {'Sì' if settings.exclude_broken else 'No (penalizzati nel voto)'}\n"
+            f"📦 <b>Stima Spedizione Estera:</b> € {settings.default_estimated_shipping_international:.2f}\n\n"
+            f"<i>Configurabile dal file .env sul server.</i>"
+        )
+        back_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Menu Principale", callback_data="menu:main")]])
+        await query.edit_message_text(msg, reply_markup=back_keyboard, parse_mode=ParseMode.HTML)
+
+    elif data == "menu:help":
+        msg = (
+            f"❓ <b>GUIDA COMANDI OFFERTEBOT:</b>\n\n"
+            f"📱 /menu — Menu interattivo completo a pulsanti\n"
+            f"⭐ /offerte — Mostra le migliori occasioni nel database\n"
+            f"🔍 /cerca <code>&lt;console&gt; [budget]</code> — Ricerca istantanea su tutti i marketplace\n"
+            f"📌 /traccia <code>&lt;console&gt; [budget]</code> — Aggiunge un prodotto da monitorare ogni 15 min\n"
+            f"📋 /mieicerche — Visualizza e gestisci i tuoi monitoraggi attivi\n"
+            f"⚙️ /impostazioni — Parametri e filtri correnti\n\n"
+            f"<i>💡 Esempio: <code>/traccia New Nintendo 3DS XL 170</code></i>"
+        )
+        back_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Menu Principale", callback_data="menu:main")]])
+        await query.edit_message_text(msg, reply_markup=back_keyboard, parse_mode=ParseMode.HTML)
+
+    elif data.startswith("toggle:"):
         search_id = int(data.split(":")[1])
         new_state = await db.toggle_search(search_id, chat_id)
         if new_state is not None:
@@ -270,6 +469,7 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
 
 def register_handlers(app):
     app.add_handler(CommandHandler("start", start_handler))
+    app.add_handler(CommandHandler("menu", menu_handler))
     app.add_handler(CommandHandler("help", help_handler))
     app.add_handler(CommandHandler("cerca", search_handler))
     app.add_handler(CommandHandler("traccia", track_handler))
