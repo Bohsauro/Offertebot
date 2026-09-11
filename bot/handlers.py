@@ -117,6 +117,10 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
 
 
+async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await start_handler(update, context)
+
+
 async def invite_code_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     user_name = update.effective_user.first_name if update.effective_user else "Utente"
