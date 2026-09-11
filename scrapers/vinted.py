@@ -28,6 +28,21 @@ class VintedScraper(BaseScraper):
                 logger.warning(f"[Vinted] Errore inizializzazione sessione/cookie: {e}")
         return self.session
 
+    def is_item_sold(self, item_url: str) -> bool:
+        """Verifica se l'articolo su Vinted è già stato venduto o prenotato."""
+        if not item_url:
+            return False
+        try:
+            session = self._get_session()
+            resp = session.get(item_url, headers=self.headers, impersonate="chrome124", timeout=8)
+            if resp.status_code == 200:
+                text = resp.text
+                if "buyer_item_status" in text and any(w in text for w in ("Venduto", "Vendu", "Sold", "Verkauft", "Vendido", "Prenotato", "Réservé", "Reserved")):
+                    return True
+        except Exception as e:
+            logger.debug(f"[Vinted] Errore verifica stato venduto per {item_url}: {e}")
+        return False
+
     async def search(self, query: str, max_results: int = 25) -> List[DealItem]:
         encoded_query = urllib.parse.quote(query)
         url = f"https://www.vinted.it/api/v2/catalog/items?search_text={encoded_query}&order=newest_first"
@@ -67,6 +82,16 @@ class VintedScraper(BaseScraper):
                 except ValueError:
                     price_val = 0.0
 
+                # URL articolo
+                item_url = it.get("url", "")
+                if item_url and not item_url.startswith("http"):
+                    item_url = f"https://www.vinted.it{item_url}"
+
+                # Controllo se l'articolo è già stato venduto
+                if self.is_item_sold(item_url):
+                    logger.debug(f"[Vinted] Articolo scartato perché già VENDUTO: {title} ({item_url})")
+                    continue
+
                 # Commissione protezione acquisti Vinted
                 service_fee_dict = it.get("service_fee", {})
                 fee_val = 0.0
@@ -83,11 +108,6 @@ class VintedScraper(BaseScraper):
                 # Foto
                 photo_obj = it.get("photo", {}) or {}
                 image_url = photo_obj.get("url")
-
-                # URL articolo
-                item_url = it.get("url", "")
-                if item_url and not item_url.startswith("http"):
-                    item_url = f"https://www.vinted.it{item_url}"
 
                 brand = it.get("brand_title", "")
                 condition_desc = f"Brand: {brand}" if brand else ""
