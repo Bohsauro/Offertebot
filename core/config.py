@@ -72,5 +72,15 @@ class Settings:
     def default_estimated_shipping_international(self) -> float:
         return float(self.config_data.get("general", {}).get("default_estimated_shipping_international", 9.99))
 
+    @property
+    def enabled_scrapers(self) -> Dict[str, bool]:
+        raw = self.config_data.get("scrapers", {})
+        return {
+            "subito": raw.get("subito", True),
+            "vinted": raw.get("vinted", True),
+            "ebay": raw.get("ebay", False),
+            "wallapop": raw.get("wallapop", False),
+        }
+
 
 settings = Settings()

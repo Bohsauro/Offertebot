@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import urllib.parse
 from typing import List
@@ -13,7 +14,7 @@ class WallapopScraper(BaseScraper):
         super().__init__(name="wallapop")
         self.api_url = "https://api.wallapop.com/api/v3/general/search"
 
-    async def search(self, query: str, max_results: int = 25) -> List[DealItem]:
+    def _search_sync(self, query: str, max_results: int = 25) -> List[DealItem]:
         params = {
             "keywords": query,
             "filters_source": "search_box",
@@ -32,8 +33,11 @@ class WallapopScraper(BaseScraper):
         results: List[DealItem] = []
         try:
             response = requests.get(self.api_url, params=params, headers=headers, impersonate="chrome124", timeout=15)
-            if response.status_code != 200:
-                logger.info(f"[Wallapop] Endpoint non disponibile o bloccato (Status: {response.status_code})")
+            if response.status_code == 403:
+                logger.info(f"[Wallapop] Richiesta bloccata da CloudFront WAF (Status: 403) per '{query}'")
+                return []
+            elif response.status_code != 200:
+                logger.info(f"[Wallapop] Endpoint non disponibile (Status: {response.status_code})")
                 return []
 
             data = response.json()
@@ -86,3 +90,7 @@ class WallapopScraper(BaseScraper):
             logger.error(f"[Wallapop] Errore durante la ricerca: {e}")
 
         return results
+
+    async def search(self, query: str, max_results: int = 25) -> List[DealItem]:
+        """Esegue lo scraping su Wallapop in un thread asincrono separato per non bloccare l'event loop."""
+        return await asyncio.to_thread(self._search_sync, query, max_results)

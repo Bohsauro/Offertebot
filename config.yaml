@@ -6,6 +6,14 @@ general:
   max_deals_per_command: 10
   default_estimated_shipping_international: 9.99
 
+# Piattaforme di scraping abilitate
+# Nota: eBay e Wallapop richiedono proxy residenziale per superare Akamai/CloudFront WAF
+scrapers:
+  subito: true
+  vinted: true
+  ebay: false
+  wallapop: false
+
 # Prodotti pre-configurati da monitorare (console richieste)
 default_searches:
   - query: "New Nintendo 2DS XL"

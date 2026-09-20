@@ -1,8 +1,13 @@
 import sqlite3
 import re
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from core.config import settings
 from core.analyzer import DealAnalyzer
 
-db_path = '/app/data/offertebot.db'
+db_path = str(settings.db_path)
 conn = sqlite3.connect(db_path)
 c = conn.cursor()
 c.execute('SELECT id, title, price, search_query, url FROM deals')

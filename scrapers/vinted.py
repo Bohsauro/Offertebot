@@ -1,6 +1,9 @@
+import asyncio
 import logging
+import re
 import urllib.parse
-from typing import List, Optional
+from typing import List
+from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 from scrapers.base import BaseScraper, DealItem
@@ -8,128 +11,103 @@ from scrapers.base import BaseScraper, DealItem
 logger = logging.getLogger(__name__)
 
 
+def _parse_price(val: str) -> float:
+    val = val.strip()
+    if "," in val and "." in val:
+        val = val.replace(".", "").replace(",", ".")
+    elif "," in val:
+        val = val.replace(",", ".")
+    try:
+        return float(val)
+    except ValueError:
+        return 0.0
+
+
 class VintedScraper(BaseScraper):
     def __init__(self):
         super().__init__(name="vinted")
-        self.session: Optional[requests.Session] = None
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/plain, */*",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
         }
 
-    def _get_session(self) -> requests.Session:
-        if self.session is None:
-            self.session = requests.Session()
-            try:
-                # Richiesta iniziale per ottenere i cookie di sessione validi
-                self.session.get("https://www.vinted.it", headers=self.headers, impersonate="chrome124", timeout=15)
-            except Exception as e:
-                logger.warning(f"[Vinted] Errore inizializzazione sessione/cookie: {e}")
-        return self.session
-
-    def is_item_sold(self, item_url: str) -> bool:
-        """Verifica se l'articolo su Vinted è già stato venduto o prenotato."""
-        if not item_url:
-            return False
-        try:
-            session = self._get_session()
-            resp = session.get(item_url, headers=self.headers, impersonate="chrome124", timeout=8)
-            if resp.status_code == 200:
-                text = resp.text
-                if "buyer_item_status" in text and any(w in text for w in ("Venduto", "Vendu", "Sold", "Verkauft", "Vendido", "Prenotato", "Réservé", "Reserved")):
-                    return True
-        except Exception as e:
-            logger.debug(f"[Vinted] Errore verifica stato venduto per {item_url}: {e}")
-        return False
-
-    async def search(self, query: str, max_results: int = 25) -> List[DealItem]:
+    def _scrape_catalog_sync(self, query: str, max_results: int = 25) -> List[DealItem]:
         encoded_query = urllib.parse.quote(query)
-        url = f"https://www.vinted.it/api/v2/catalog/items?search_text={encoded_query}&order=newest_first"
+        url = f"https://www.vinted.it/catalog?search_text={encoded_query}&order=newest_first"
 
-        results: List[DealItem] = []
         try:
-            session = self._get_session()
-            response = session.get(url, headers=self.headers, impersonate="chrome124", timeout=15)
-
-            # Se la sessione è scaduta o ritorna 401/403, rigeneriamo la sessione una volta
-            if response.status_code in (401, 403):
-                logger.info("[Vinted] Cookie di sessione scaduti, rigenerazione in corso...")
-                self.session = requests.Session()
-                self.session.get("https://www.vinted.it", headers=self.headers, impersonate="chrome124", timeout=15)
-                response = self.session.get(url, headers=self.headers, impersonate="chrome124", timeout=15)
-
-            if response.status_code != 200:
-                logger.warning(f"[Vinted] Risposta API non valida: {response.status_code}")
+            session = requests.Session(impersonate="chrome124")
+            resp = session.get(url, headers=self.headers, timeout=15)
+            if resp.status_code != 200:
+                logger.warning(f"[Vinted] Risposta catalogo anomala: {resp.status_code}")
                 return []
 
-            data = response.json()
-            raw_items = data.get("items", [])
+            soup = BeautifulSoup(resp.text, "html.parser")
+            overlays = soup.find_all("a", attrs={"data-testid": re.compile(r"product-item-id-(\d+)--overlay-link")})
 
-            for it in raw_items:
+            results: List[DealItem] = []
+            for a in overlays:
                 if len(results) >= max_results:
                     break
 
-                title = it.get("title", "").strip()
-                if not title:
+                title_attr = a.get("title", "")
+                href = a.get("href", "")
+                m_id = re.search(r"product-item-id-(\d+)--overlay-link", a.get("data-testid", ""))
+                item_id = m_id.group(1) if m_id else ""
+
+                if not item_id or not title_attr:
                     continue
 
-                item_id = str(it.get("id", ""))
-                price_dict = it.get("price", {})
-                price_val = 0.0
-                try:
-                    price_val = float(price_dict.get("amount", "0"))
-                except ValueError:
-                    price_val = 0.0
-
-                # URL articolo
-                item_url = it.get("url", "")
-                if item_url and not item_url.startswith("http"):
-                    item_url = f"https://www.vinted.it{item_url}"
-
-                # Controllo se l'articolo è già stato venduto
-                if self.is_item_sold(item_url):
-                    logger.debug(f"[Vinted] Articolo scartato perché già VENDUTO: {title} ({item_url})")
+                card = a.find_parent("div", class_=re.compile(r"ItemBox|cell|feed-grid")) or a.parent
+                if any(w in card.text.lower() for w in ["venduto", "vendu", "sold", "prenotato", "réservé", "reserved"]):
                     continue
 
-                # Commissione protezione acquisti Vinted
-                service_fee_dict = it.get("service_fee", {})
-                fee_val = 0.0
-                try:
-                    fee_val = float(service_fee_dict.get("amount", "0"))
-                except ValueError:
-                    fee_val = 0.0
+                img = a.parent.find("img", attrs={"data-testid": re.compile(r"--image--img")})
+                image_url = img.get("src") if img else None
 
-                # Stima spedizione Vinted (punto di ritiro medio IT/EU ~3.50€)
+                prices = re.findall(r"([\d\.,]+)\s*€", title_attr)
+                price_val = _parse_price(prices[0]) if prices else 0.0
+                total_price_val = _parse_price(prices[-1]) if len(prices) > 1 else price_val
+                fee_val = round(max(0.0, total_price_val - price_val), 2)
+
+                clean_title = title_attr
+                cond_text = ""
+                if "Brand:" in title_attr or "Condizioni:" in title_attr:
+                    clean_title = re.split(r",\s*(?:Brand|Condizioni):", title_attr)[0].strip()
+                    m_cond = re.search(r"Condizioni:\s*([^,]+)", title_attr)
+                    if m_cond:
+                        cond_text = m_cond.group(1).strip()
+
                 estimated_shipping = 3.50
                 total_shipping_and_fees = round(fee_val + estimated_shipping, 2)
-                total_price = round(price_val + total_shipping_and_fees, 2)
-
-                # Foto
-                photo_obj = it.get("photo", {}) or {}
-                image_url = photo_obj.get("url")
-
-                brand = it.get("brand_title", "")
-                condition_desc = f"Brand: {brand}" if brand else ""
+                final_total = round(price_val + total_shipping_and_fees, 2)
+                deal_url = f"https://www.vinted.it{href}" if href.startswith("/") else href
 
                 deal = DealItem(
                     id=f"vinted_{item_id}",
-                    title=title,
+                    title=clean_title,
                     price=price_val,
                     shipping_cost=total_shipping_and_fees,
-                    total_price=total_price,
-                    url=item_url,
+                    total_price=final_total,
+                    url=deal_url,
                     image_url=image_url,
                     source="vinted",
-                    description=title,
+                    description=clean_title,
                     location="Vinted (IT / Europa)",
                     is_international=True,
-                    condition_text=condition_desc,
+                    condition_text=cond_text,
                     search_query=query
                 )
                 results.append(deal)
 
-        except Exception as e:
-            logger.error(f"[Vinted] Errore durante la ricerca per '{query}': {e}", exc_info=True)
+            return results
 
-        return results
+        except Exception as e:
+            logger.error(f"[Vinted] Errore durante lo scraping per '{query}': {e}", exc_info=True)
+            return []
+
+    async def search(self, query: str, max_results: int = 25) -> List[DealItem]:
+        """Esegue lo scraping su Vinted in un thread asincrono separato per non bloccare l'event loop."""
+        return await asyncio.to_thread(self._scrape_catalog_sync, query, max_results)
+

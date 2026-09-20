@@ -34,7 +34,8 @@ Analizza automaticamente titolo e descrizione per rilevare **danni, difetti, gua
 | `/traccia <prodotto> [budget]` | Aggiunge un prodotto al monitoraggio automatico in background |
 | `/mieicerche` | Elenca le ricerche attive con pulsanti per metterle in pausa o eliminarle |
 | `/offerte [filtro]` | Mostra le migliori offerte attualmente salvate nel database |
-| `/impostazioni` | Mostra intervallo di scansione, voto minimo per gli alert e filtri |
+| `/stats` | Visualizza statistiche aggregate (totali, ultime 24h/7d, miglior affare) |
+| `/impostazioni` | Mostra intervallo di scansione, marketplace attivi e filtri |
 
 ---
 

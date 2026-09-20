@@ -1,3 +1,4 @@
+import asyncio
 import re
 import logging
 import urllib.parse
@@ -15,7 +16,7 @@ class EbayScraper(BaseScraper):
         super().__init__(name="ebay")
         self.base_url = "https://www.ebay.it/sch/i.html"
 
-    async def search(self, query: str, max_results: int = 25) -> List[DealItem]:
+    def _search_sync(self, query: str, max_results: int = 25) -> List[DealItem]:
         encoded_query = urllib.parse.quote(query)
         # _sop=12 = "Appena inseriti" (i migliori affari prima che vengano acquistati)
         url = f"{self.base_url}?_nkw={encoded_query}&_sop=12"
@@ -30,8 +31,11 @@ class EbayScraper(BaseScraper):
         results: List[DealItem] = []
         try:
             response = requests.get(url, headers=headers, impersonate="chrome124", timeout=15)
-            if response.status_code != 200:
-                logger.warning(f"[eBay] Status code: {response.status_code}")
+            if response.status_code == 403 or "challenge" in response.text.lower() or response.status_code == 307:
+                logger.info(f"[eBay] Bloccato da protezione anti-bot Akamai (Status: {response.status_code}) per '{query}'")
+                return []
+            elif response.status_code != 200:
+                logger.warning(f"[eBay] Status code anomalo: {response.status_code}")
                 return []
 
             soup = BeautifulSoup(response.text, "html.parser")
@@ -125,3 +129,7 @@ class EbayScraper(BaseScraper):
             logger.error(f"[eBay] Errore durante la ricerca per '{query}': {e}", exc_info=True)
 
         return results
+
+    async def search(self, query: str, max_results: int = 25) -> List[DealItem]:
+        """Esegue lo scraping su eBay in un thread asincrono separato per non bloccare l'event loop."""
+        return await asyncio.to_thread(self._search_sync, query, max_results)

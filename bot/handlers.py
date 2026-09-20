@@ -1,3 +1,4 @@
+import html
 import logging
 import re
 from typing import Optional
@@ -11,6 +12,7 @@ from telegram.ext import (
 
 from core.database import db
 from core.config import settings
+from scrapers.base import DealItem
 from scrapers.manager import scraper_manager
 from bot.formatters import format_deal_message, get_deal_keyboard
 
@@ -27,11 +29,45 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🔍 Cerca Subito una Console", callback_data="menu:quick_search_menu"),
         ],
         [
+            InlineKeyboardButton("📊 Statistiche", callback_data="menu:stats"),
             InlineKeyboardButton("⚙️ Impostazioni", callback_data="menu:settings"),
+        ],
+        [
             InlineKeyboardButton("❓ Guida Comandi", callback_data="menu:help")
         ]
     ]
     return InlineKeyboardMarkup(buttons)
+
+
+async def reply_with_deal(
+    target_msg,
+    deal: DealItem,
+    target_price: Optional[float] = None,
+    is_alert: bool = False
+):
+    """Invia un'offerta includendo la foto se disponibile, con fallback a messaggio testo."""
+    text = format_deal_message(deal, target_price=target_price, is_alert=is_alert)
+    markup = get_deal_keyboard(deal.url)
+
+    if deal.image_url and deal.image_url.startswith("http"):
+        caption = text if len(text) <= 1024 else text[:1020] + "..."
+        try:
+            await target_msg.reply_photo(
+                photo=deal.image_url,
+                caption=caption,
+                reply_markup=markup,
+                parse_mode=ParseMode.HTML
+            )
+            return
+        except Exception as e:
+            logger.debug(f"Invio foto fallito per '{deal.title}', fallback a testo: {e}")
+
+    await target_msg.reply_text(
+        text,
+        reply_markup=markup,
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=False
+    )
 
 
 def get_quick_search_keyboard() -> InlineKeyboardMarkup:
@@ -218,14 +254,7 @@ async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Invia le migliori 5 offerte trovate
         top_deals = deals[:5]
         for deal in top_deals:
-            text = format_deal_message(deal, target_price=target_price, is_alert=False)
-            markup = get_deal_keyboard(deal.url)
-            await update.message.reply_text(
-                text,
-                reply_markup=markup,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=False
-            )
+            await reply_with_deal(update.message, deal, target_price=target_price, is_alert=False)
 
     except Exception as e:
         logger.error(f"Errore durante /cerca: {e}", exc_info=True)
@@ -349,43 +378,68 @@ async def offers_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     for d in deals:
-        from scrapers.base import DealItem
-        import json
-
-        item = DealItem(
-            id=d["id"],
-            title=d["title"],
-            price=d["price"],
-            shipping_cost=d["shipping_cost"],
-            total_price=d["total_price"],
-            url=d["url"],
-            image_url=d["image_url"],
-            source=d["source"],
-            description=d["description"],
-            location=d["location"] or "Italia",
-            score=d["score"],
-            defect_severity=d["defect_severity"] or "NONE",
-            defect_labels=json.loads(d["defect_labels"]) if d["defect_labels"] else []
-        )
-        text = format_deal_message(item, is_alert=False)
-        markup = get_deal_keyboard(item.url)
-        await update.message.reply_text(
-            text,
-            reply_markup=markup,
-            parse_mode=ParseMode.HTML
-        )
+        item = DealItem.from_db_row(d)
+        await reply_with_deal(update.message, item, is_alert=False)
 
 
 async def settings_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    enabled_str = ", ".join([k.capitalize() for k, v in settings.enabled_scrapers.items() if v])
     msg = (
         f"⚙️ <b>Impostazioni Attuali di OfferteBot:</b>\n\n"
         f"⏱️ <b>Frequenza Scansioni:</b> ogni {settings.check_interval_minutes} minuti\n"
         f"⭐ <b>Soglia Minima Alert:</b> {settings.min_alert_score}/10\n"
         f"🛡️ <b>Escludi Prodotti Rotti:</b> {'Sì' if settings.exclude_broken else 'No (penalizzati nel voto)'}\n"
-        f"📦 <b>Stima Spedizione Estera:</b> € {settings.default_estimated_shipping_international:.2f}\n\n"
+        f"📦 <b>Stima Spedizione Estera:</b> € {settings.default_estimated_shipping_international:.2f}\n"
+        f"🏪 <b>Marketplace Attivi:</b> {enabled_str}\n\n"
         f"<i>Puoi modificare questi valori nel file <code>.env</code> o <code>config.yaml</code> sul tuo server Ubuntu.</i>"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+
+
+async def stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    if not await db.is_user_authorized(chat_id):
+        await update.message.reply_text("🔒 Devi prima riscattare un invito con <code>/riscatta CODICE</code>.", parse_mode=ParseMode.HTML)
+        return
+
+    stats = await db.get_stats()
+
+    source_icons = {"subito": "🟡 Subito.it", "vinted": "🔵 Vinted", "ebay": "🔴 eBay", "wallapop": "🟢 Wallapop"}
+    by_source_lines = []
+    for src, count in stats["deals_by_source"].items():
+        name = source_icons.get(src.lower(), src.capitalize())
+        by_source_lines.append(f"• {name}: <b>{count}</b> annunci")
+    sources_str = "\n".join(by_source_lines) if by_source_lines else "<i>Nessuna offerta ancora salvata</i>"
+
+    enabled_str = ", ".join([k.capitalize() for k, v in settings.enabled_scrapers.items() if v])
+
+    best = stats.get("best_deal")
+    if best:
+        best_str = f"🏆 <b>{best['score']}/10</b> — <a href=\"{best['url']}\">{html.escape(best['title'][:50])}</a> (€ {best['total_price']:.2f})"
+    else:
+        best_str = "<i>N/D</i>"
+
+    text = (
+        "📊 <b>STATISTICHE DI OFFERTEBOT</b> 🤖\n\n"
+        f"📦 <b>Offerte Totali nel Database:</b> {stats['total_deals']}\n"
+        f"⏱️ <b>Nuove nelle ultime 24 ore:</b> +{stats['deals_24h']}\n"
+        f"📅 <b>Nuove negli ultimi 7 giorni:</b> +{stats['deals_7d']}\n\n"
+        f"🏪 <b>Ripartizione per Piattaforma:</b>\n{sources_str}\n\n"
+        f"🎯 <b>Migliore Affare Registrato:</b>\n{best_str}\n\n"
+        f"📋 <b>Ricerche Monitorate:</b> {stats['active_searches']} attive su {stats['total_searches']}\n"
+        f"👥 <b>Utenti Registrati:</b> {stats['total_users']}\n"
+        f"⚙️ <b>Marketplace Attivi:</b> {enabled_str}\n"
+        f"⏱️ <b>Frequenza Scansioni:</b> ogni {settings.check_interval_minutes} min"
+    )
+
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏆 Migliori Offerte", callback_data="menu:offers")],
+        [InlineKeyboardButton("🔙 Menu Principale", callback_data="menu:main")]
+    ])
+    if update.message:
+        await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 
 async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -394,6 +448,11 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     data = query.data
     chat_id = str(update.effective_chat.id)
+
+    # Verifica autorizzazione utente
+    if not await db.is_user_authorized(chat_id):
+        await query.answer("🔒 Non sei autorizzato. Riscatta un codice con /riscatta.", show_alert=True)
+        return
 
     if data == "menu:main":
         msg = (
@@ -436,13 +495,7 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
                 parse_mode=ParseMode.HTML
             )
             for d in deals[:5]:
-                text = format_deal_message(d, is_alert=False)
-                markup = get_deal_keyboard(d.url)
-                await query.message.reply_text(
-                    text,
-                    reply_markup=markup,
-                    parse_mode=ParseMode.HTML
-                )
+                await reply_with_deal(query.message, d, is_alert=False)
         except Exception as e:
             logger.error(f"Errore durante quick search {console_name}: {e}", exc_info=True)
             await query.edit_message_text("❌ Si è verificato un errore durante la ricerca.")
@@ -461,31 +514,11 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
 
         await query.edit_message_text("🏆 <b>Migliori Offerte Attuali:</b>", parse_mode=ParseMode.HTML)
         for d in deals:
-            from scrapers.base import DealItem
-            import json
+            item = DealItem.from_db_row(d)
+            await reply_with_deal(query.message, item, is_alert=False)
 
-            item = DealItem(
-                id=d["id"],
-                title=d["title"],
-                price=d["price"],
-                shipping_cost=d["shipping_cost"],
-                total_price=d["total_price"],
-                url=d["url"],
-                image_url=d["image_url"],
-                source=d["source"],
-                description=d["description"],
-                location=d["location"] or "Italia",
-                score=d["score"],
-                defect_severity=d["defect_severity"] or "NONE",
-                defect_labels=json.loads(d["defect_labels"]) if d["defect_labels"] else []
-            )
-            text = format_deal_message(item, is_alert=False)
-            markup = get_deal_keyboard(item.url)
-            await query.message.reply_text(
-                text,
-                reply_markup=markup,
-                parse_mode=ParseMode.HTML
-            )
+    elif data == "menu:stats":
+        await stats_handler(update, context)
 
     elif data == "menu:searches":
         searches = await db.get_searches_by_chat_id(chat_id)
@@ -571,5 +604,7 @@ def register_handlers(app):
     app.add_handler(CommandHandler("traccia", track_handler))
     app.add_handler(CommandHandler("mieicerche", my_searches_handler))
     app.add_handler(CommandHandler("offerte", offers_handler))
+    app.add_handler(CommandHandler("stats", stats_handler))
+    app.add_handler(CommandHandler("statistiche", stats_handler))
     app.add_handler(CommandHandler("impostazioni", settings_handler))
     app.add_handler(CallbackQueryHandler(callback_query_handler))

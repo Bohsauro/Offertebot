@@ -307,5 +307,76 @@ class Database:
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
+    async def get_stats(self) -> Dict[str, Any]:
+        """Raccoglie statistiche aggregate sul database per il comando /stats."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+
+            cursor = await db.execute("SELECT COUNT(*) as total FROM deals;")
+            row = await cursor.fetchone()
+            total_deals = row["total"] if row else 0
+
+            cursor = await db.execute("SELECT source, COUNT(*) as cnt FROM deals GROUP BY source;")
+            rows = await cursor.fetchall()
+            by_source = {r["source"]: r["cnt"] for r in rows}
+
+            cursor = await db.execute("""
+                SELECT COUNT(*) as cnt_24h FROM deals
+                WHERE found_at >= datetime('now', '-1 day');
+            """)
+            row = await cursor.fetchone()
+            deals_24h = row["cnt_24h"] if row else 0
+
+            cursor = await db.execute("""
+                SELECT COUNT(*) as cnt_7d FROM deals
+                WHERE found_at >= datetime('now', '-7 days');
+            """)
+            row = await cursor.fetchone()
+            deals_7d = row["cnt_7d"] if row else 0
+
+            cursor = await db.execute("""
+                SELECT title, price, total_price, score, url, source FROM deals
+                ORDER BY score DESC, found_at DESC LIMIT 1;
+            """)
+            best_deal_row = await cursor.fetchone()
+            best_deal = dict(best_deal_row) if best_deal_row else None
+
+            cursor = await db.execute("""
+                SELECT COUNT(*) as total, SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active
+                FROM tracked_searches;
+            """)
+            row = await cursor.fetchone()
+            total_searches = row["total"] if row else 0
+            active_searches = row["active"] if (row and row["active"] is not None) else 0
+
+            cursor = await db.execute("SELECT COUNT(*) as total FROM users;")
+            row = await cursor.fetchone()
+            total_users = row["total"] if row else 0
+
+            return {
+                "total_deals": total_deals,
+                "deals_by_source": by_source,
+                "deals_24h": deals_24h,
+                "deals_7d": deals_7d,
+                "best_deal": best_deal,
+                "total_searches": total_searches,
+                "active_searches": active_searches,
+                "total_users": total_users,
+            }
+
+    async def cleanup_old_deals(self, max_age_days: int = 30) -> int:
+        """Elimina dal database i deal più vecchi di max_age_days giorni."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                DELETE FROM deals
+                WHERE found_at < datetime('now', ?);
+            """, (f"-{max_age_days} days",))
+            await db.commit()
+            deleted_count = cursor.rowcount
+            if deleted_count > 0:
+                logger.info(f"Pulizia automatica database: eliminati {deleted_count} annunci più vecchi di {max_age_days} giorni.")
+            return deleted_count
+
 
 db = Database()
+

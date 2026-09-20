@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import urllib.parse
@@ -15,7 +16,7 @@ class SubitoScraper(BaseScraper):
         super().__init__(name="subito")
         self.base_url = "https://www.subito.it/annunci-italia/vendita/usato/"
 
-    async def search(self, query: str, max_results: int = 25) -> List[DealItem]:
+    def _search_sync(self, query: str, max_results: int = 25) -> List[DealItem]:
         encoded_query = urllib.parse.quote(query)
         url = f"{self.base_url}?q={encoded_query}"
 
@@ -136,3 +137,7 @@ class SubitoScraper(BaseScraper):
             logger.error(f"[Subito] Errore durante lo scraping per '{query}': {e}", exc_info=True)
 
         return results
+
+    async def search(self, query: str, max_results: int = 25) -> List[DealItem]:
+        """Esegue lo scraping su Subito in un thread asincrono separato per non bloccare l'event loop."""
+        return await asyncio.to_thread(self._search_sync, query, max_results)

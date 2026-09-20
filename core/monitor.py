@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from typing import Optional
 from telegram.constants import ParseMode
@@ -15,6 +16,7 @@ class DealsMonitor:
     def __init__(self, bot_app=None):
         self.bot_app = bot_app
         self.is_running = False
+        self._last_cleanup_timestamp = 0.0
 
     async def start(self):
         self.is_running = True
@@ -35,6 +37,15 @@ class DealsMonitor:
         logger.info("Monitor periodico arrestato.")
 
     async def run_check_cycle(self):
+        import time
+        # Esegui pulizia automatica annunci obsoleti una volta al giorno
+        if time.time() - self._last_cleanup_timestamp > 86400:
+            try:
+                await db.cleanup_old_deals(max_age_days=30)
+                self._last_cleanup_timestamp = time.time()
+            except Exception as e:
+                logger.error(f"Errore durante pulizia automatica database: {e}")
+
         active_searches = await db.get_all_active_searches()
         if not active_searches:
             logger.info("Nessuna ricerca attiva nel database.")
@@ -95,13 +106,31 @@ class DealsMonitor:
         try:
             text = format_deal_message(deal, target_price=target_price, is_alert=True)
             markup = get_deal_keyboard(deal.url)
-            await self.bot_app.bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                reply_markup=markup,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=False
-            )
+
+            # Invio con anteprima foto se disponibile (fallback a testo se fallisce o non presente)
+            sent = False
+            if deal.image_url and deal.image_url.startswith("http"):
+                caption = text if len(text) <= 1024 else text[:1020] + "..."
+                try:
+                    await self.bot_app.bot.send_photo(
+                        chat_id=chat_id,
+                        photo=deal.image_url,
+                        caption=caption,
+                        reply_markup=markup,
+                        parse_mode=ParseMode.HTML
+                    )
+                    sent = True
+                except Exception as img_err:
+                    logger.debug(f"Invio foto fallito per '{deal.title}', fallback a messaggio testo: {img_err}")
+
+            if not sent:
+                await self.bot_app.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    reply_markup=markup,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=False
+                )
             logger.info(f"Alert inviato a {chat_id} per '{deal.title}' (Voto: {deal.score}/10)")
         except Exception as e:
             logger.error(f"Impossibile inviare alert Telegram a {chat_id}: {e}")

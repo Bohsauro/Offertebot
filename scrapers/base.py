@@ -34,6 +34,34 @@ class DealItem:
         if self.total_price <= 0 and self.price > 0:
             self.total_price = round(self.price + self.shipping_cost, 2)
 
+    @classmethod
+    def from_db_row(cls, d: Dict[str, Any]) -> "DealItem":
+        import json
+        labels = []
+        raw_labels = d.get("defect_labels")
+        if raw_labels:
+            try:
+                labels = json.loads(raw_labels) if isinstance(raw_labels, str) else raw_labels
+            except Exception:
+                labels = []
+
+        return cls(
+            id=d["id"],
+            title=d["title"],
+            price=d.get("price", 0.0),
+            shipping_cost=d.get("shipping_cost", 0.0),
+            total_price=d.get("total_price", 0.0),
+            url=d.get("url", ""),
+            image_url=d.get("image_url"),
+            source=d.get("source", ""),
+            description=d.get("description", ""),
+            location=d.get("location") or "Italia",
+            score=d.get("score", 5.0),
+            defect_severity=d.get("defect_severity") or "NONE",
+            defect_labels=labels,
+            search_query=d.get("search_query", "")
+        )
+
 
 class BaseScraper(ABC):
     def __init__(self, name: str):

@@ -7,6 +7,7 @@ from scrapers.subito import SubitoScraper
 from scrapers.vinted import VintedScraper
 from scrapers.ebay import EbayScraper
 from scrapers.wallapop import WallapopScraper
+from core.config import settings
 from core.analyzer import analyzer
 
 logger = logging.getLogger(__name__)
@@ -34,9 +35,11 @@ class ScraperManager:
         Interroga tutti i marketplace in parallelo, raccoglie le offerte,
         esegue l'analisi difetti e il calcolo del voto (1-10), ordinandole per convenienza.
         """
+        # Considera solo i scraper abilitati nella configurazione
+        active_scrapers = [s for s in self.scrapers if settings.enabled_scrapers.get(s.name, True)]
         tasks = [
             s.search(query, max_results=max_results_per_platform)
-            for s in self.scrapers
+            for s in active_scrapers
         ]
 
         # Esecuzione concorrente con gestione sicura degli errori per singola piattaforma
@@ -46,7 +49,7 @@ class ScraperManager:
         seen_urls = set()
 
         for idx, resp in enumerate(responses):
-            scraper_name = self.scrapers[idx].name
+            scraper_name = active_scrapers[idx].name
             if isinstance(resp, Exception):
                 logger.error(f"Errore nello scraper '{scraper_name}': {resp}")
                 continue
