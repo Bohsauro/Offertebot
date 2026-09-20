@@ -1,8 +1,12 @@
 import asyncio
-import re
+import base64
 import logging
+import os
+import re
+import time
 import urllib.parse
-from typing import List
+from typing import List, Optional
+import httpx
 from bs4 import BeautifulSoup
 from curl_cffi import requests
 
@@ -12,13 +16,104 @@ logger = logging.getLogger(__name__)
 
 
 class EbayScraper(BaseScraper):
+    """Scraper ibrido per eBay: usa le REST API ufficiali se configurate, oppure scraping web via browser impersonation."""
+
     def __init__(self):
         super().__init__(name="ebay")
         self.base_url = "https://www.ebay.it/sch/i.html"
+        self.client_id = os.getenv("EBAY_CLIENT_ID", "").strip()
+        self.client_secret = os.getenv("EBAY_CLIENT_SECRET", "").strip()
+        self._token: Optional[str] = None
+        self._token_expiry: float = 0.0
+
+    async def _get_oauth_token(self) -> Optional[str]:
+        if not self.client_id or not self.client_secret:
+            return None
+        now = time.time()
+        if self._token and now < self._token_expiry - 60:
+            return self._token
+
+        auth_header = base64.b64encode(f"{self.client_id}:{self.client_secret}".encode()).decode()
+        url = "https://api.ebay.com/identity/v1/oauth2/token"
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Authorization": f"Basic {auth_header}"
+        }
+        data = {
+            "grant_type": "client_credentials",
+            "scope": "https://api.ebay.com/oauth/api_scope"
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.post(url, headers=headers, data=data)
+                if r.status_code == 200:
+                    token_data = r.json()
+                    self._token = token_data.get("access_token")
+                    expires_in = token_data.get("expires_in", 7200)
+                    self._token_expiry = now + expires_in
+                    return self._token
+                else:
+                    logger.warning(f"[eBay API] Errore token OAuth ({r.status_code}): {r.text[:200]}")
+        except Exception as e:
+            logger.error(f"[eBay API] Eccezione OAuth: {e}")
+        return None
+
+    async def _search_api(self, query: str, token: str, max_results: int = 25) -> List[DealItem]:
+        url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "X-EBAY-C-MARKETPLACE-ID": "EBAY_IT",
+            "Accept": "application/json",
+        }
+        params = {
+            "q": query,
+            "limit": str(min(max_results, 50)),
+            "sort": "newlyListed",
+        }
+        results: List[DealItem] = []
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(url, headers=headers, params=params)
+                if r.status_code == 200:
+                    items = r.json().get("itemSummaries", [])
+                    for it in items:
+                        item_id = it.get("itemId", "")
+                        title = it.get("title", "").strip()
+                        price_val = float(it.get("price", {}).get("value", 0.0))
+
+                        shipping_opts = it.get("shippingOptions", [])
+                        ship_cost = 0.0
+                        if shipping_opts:
+                            ship_cost = float(shipping_opts[0].get("shippingCost", {}).get("value", 0.0))
+
+                        image_url = it.get("image", {}).get("imageUrl")
+                        item_url = it.get("itemWebUrl", "")
+                        country = it.get("itemLocation", {}).get("country", "IT")
+                        is_international = (country.upper() != "IT")
+
+                        deal = DealItem(
+                            id=f"ebay_{item_id}",
+                            title=title,
+                            price=price_val,
+                            shipping_cost=ship_cost,
+                            total_price=round(price_val + ship_cost, 2),
+                            url=item_url,
+                            image_url=image_url,
+                            source="ebay",
+                            description=title,
+                            location=f"eBay ({country})",
+                            is_international=is_international,
+                            condition_text=it.get("condition", ""),
+                            search_query=query
+                        )
+                        results.append(deal)
+                    return results
+        except Exception as e:
+            logger.error(f"[eBay API] Errore search API: {e}")
+        return []
 
     def _search_sync(self, query: str, max_results: int = 25) -> List[DealItem]:
         encoded_query = urllib.parse.quote(query)
-        # _sop=12 = "Appena inseriti" (i migliori affari prima che vengano acquistati)
         url = f"{self.base_url}?_nkw={encoded_query}&_sop=12"
 
         headers = {
@@ -53,7 +148,6 @@ class EbayScraper(BaseScraper):
                 if "Risultati corrispondenti" in title or not title or title.lower() == "shop on ebay":
                     continue
 
-                # Estrazione prezzo
                 price_el = it.select_one(".s-item__price")
                 if not price_el:
                     continue
@@ -69,7 +163,6 @@ class EbayScraper(BaseScraper):
                 except ValueError:
                     continue
 
-                # Estrazione spedizione
                 shipping_val = 0.0
                 ship_el = it.select_one(".s-item__shipping, .s-item__logisticsCost")
                 if ship_el:
@@ -86,19 +179,15 @@ class EbayScraper(BaseScraper):
                 else:
                     shipping_val = 0.0
 
-                # Provenienza / Spedizione estera
                 loc_el = it.select_one(".s-item__itemLocation, .s-item__location")
                 location = loc_el.text.strip() if loc_el else "Italia"
                 is_international = not ("italia" in location.lower())
 
-                # Se estero e spedizione non indicata, applichiamo stima
                 if is_international and shipping_val == 0.0:
                     shipping_val = 9.90
 
-                # Link e Immagine
                 link_el = it.select_one("a.s-item__link")
                 deal_url = link_el["href"] if link_el and "href" in link_el.attrs else ""
-                # Pulizia link dai parametri di tracking ebay
                 if "?" in deal_url:
                     deal_url = deal_url.split("?")[0]
 
@@ -131,5 +220,12 @@ class EbayScraper(BaseScraper):
         return results
 
     async def search(self, query: str, max_results: int = 25) -> List[DealItem]:
-        """Esegue lo scraping su eBay in un thread asincrono separato per non bloccare l'event loop."""
+        # Se sono configurate le credenziali API ufficiali di eBay, usiamo le REST API
+        token = await self._get_oauth_token()
+        if token:
+            api_results = await self._search_api(query, token, max_results=max_results)
+            if api_results:
+                return api_results
+
+        # Fallback su scraping HTML web
         return await asyncio.to_thread(self._search_sync, query, max_results)

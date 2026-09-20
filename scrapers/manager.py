@@ -7,6 +7,8 @@ from scrapers.subito import SubitoScraper
 from scrapers.vinted import VintedScraper
 from scrapers.ebay import EbayScraper
 from scrapers.wallapop import WallapopScraper
+from scrapers.kleinanzeigen import KleinanzeigenScraper
+from scrapers.rebuy import RebuyScraper
 from core.config import settings
 from core.analyzer import analyzer
 
@@ -18,6 +20,8 @@ class ScraperManager:
         self.scrapers: List[BaseScraper] = [
             SubitoScraper(),
             VintedScraper(),
+            KleinanzeigenScraper(),
+            RebuyScraper(),
             EbayScraper(),
             WallapopScraper(),
         ]

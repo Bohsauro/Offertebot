@@ -402,9 +402,14 @@ async def stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔒 Devi prima riscattare un invito con <code>/riscatta CODICE</code>.", parse_mode=ParseMode.HTML)
         return
 
-    stats = await db.get_stats()
-
-    source_icons = {"subito": "🟡 Subito.it", "vinted": "🔵 Vinted", "ebay": "🔴 eBay", "wallapop": "🟢 Wallapop"}
+    source_icons = {
+        "subito": "🟡 Subito.it",
+        "vinted": "🔵 Vinted",
+        "kleinanzeigen": "🟢 Kleinanzeigen",
+        "rebuy": "🟣 Rebuy",
+        "ebay": "🔴 eBay",
+        "wallapop": "🟠 Wallapop"
+    }
     by_source_lines = []
     for src, count in stats["deals_by_source"].items():
         name = source_icons.get(src.lower(), src.capitalize())

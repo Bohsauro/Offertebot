@@ -78,7 +78,9 @@ class Settings:
         return {
             "subito": raw.get("subito", True),
             "vinted": raw.get("vinted", True),
-            "ebay": raw.get("ebay", False),
+            "kleinanzeigen": raw.get("kleinanzeigen", True),
+            "rebuy": raw.get("rebuy", True),
+            "ebay": raw.get("ebay", True),
             "wallapop": raw.get("wallapop", False),
         }
 

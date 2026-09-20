@@ -7,11 +7,12 @@ general:
   default_estimated_shipping_international: 9.99
 
 # Piattaforme di scraping abilitate
-# Nota: eBay e Wallapop richiedono proxy residenziale per superare Akamai/CloudFront WAF
 scrapers:
   subito: true
   vinted: true
-  ebay: false
+  kleinanzeigen: true
+  rebuy: true
+  ebay: true
   wallapop: false
 
 # Prodotti pre-configurati da monitorare (console richieste)
