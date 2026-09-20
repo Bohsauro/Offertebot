@@ -183,12 +183,20 @@ class DealAnalyzer:
         if not is_console_query:
             return False
 
-        # Modello esatto: evita che Nintendo DS Lite venga scambiato per 3DS
+        # Modello esatto: evita scambi tra generazioni diverse (DS Lite vs 3DS vs 2DS)
         if "3ds" in q and not re.search(r'\b(?:3ds|3dsxl)\b', lower_title):
             return True
         if "2ds" in q and not re.search(r'\b(?:2ds|2dsxl)\b', lower_title):
             return True
         if ("vita" in q or "psvita" in q) and not re.search(r'\b(?:ps\s*vita|psvita|playstation\s+vita|pch-\d+)\b', lower_title):
+            return True
+
+        # Se la ricerca specifica il modello "New" (es. New Nintendo 3DS/2DS), il titolo DEVE contenere "new"
+        if re.search(r'\bnew\b', q) and not re.search(r'\bnew\b', lower_title):
+            return True
+
+        # Se la ricerca specifica "XL" o "LL", il titolo DEVE contenere "xl" o "ll"
+        if re.search(r'\b(?:xl|ll)\b', q) and not re.search(r'\b(?:xl|ll)\b', lower_title):
             return True
 
         # Prezzo minimo console: sotto i 45€ è al 99.9% un singolo gioco o accessorio

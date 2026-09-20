@@ -55,8 +55,12 @@ def format_deal_message(
     source_icons = {
         "subito": "🟡 Subito.it",
         "vinted": "🔵 Vinted",
+        "kleinanzeigen": "🟢 Kleinanzeigen",
+        "rebuy": "🟣 Rebuy",
+        "willhaben": "🇦🇹 Willhaben",
+        "marktplaats": "🇳🇱 Marktplaats",
         "ebay": "🔴 eBay",
-        "wallapop": "🟢 Wallapop",
+        "wallapop": "🟠 Wallapop",
     }
     source_str = source_icons.get(deal.source.lower(), f"🏪 {deal.source.capitalize()}")
 

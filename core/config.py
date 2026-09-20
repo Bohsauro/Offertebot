@@ -80,6 +80,8 @@ class Settings:
             "vinted": raw.get("vinted", True),
             "kleinanzeigen": raw.get("kleinanzeigen", True),
             "rebuy": raw.get("rebuy", True),
+            "willhaben": raw.get("willhaben", True),
+            "marktplaats": raw.get("marktplaats", True),
             "ebay": raw.get("ebay", True),
             "wallapop": raw.get("wallapop", False),
         }

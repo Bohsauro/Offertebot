@@ -133,8 +133,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = (
         f"👋 Ciao <b>{user_name}</b>! Benvenuto su <b>OfferteBot</b> 🤖\n\n"
-        f"Questo bot monitora per te le migliori offerte su <b>usato e nuovo</b> "
-        f"(Subito.it, Vinted, eBay, Wallapop) con <b>intelligenza artificiale Google Gemini</b> per escludere accessori, cover e parti di ricambio!\n\n"
+        f"Questo bot monitora per te le migliori offerte su <b>usato e ricondizionato</b> "
+        f"(Subito.it, Vinted, Kleinanzeigen 🇩🇪, Rebuy, Willhaben 🇦🇹, Marktplaats 🇳🇱, eBay) con <b>intelligenza artificiale Google Gemini</b> per escludere accessori, cover e parti di ricambio!\n\n"
         f"<b>Funzionalità principali:</b>\n"
         f"• 🧠 <b>Filtro Universale Gemini AI</b>: monitora qualsiasi cosa (console, smartphone, GPU, foto) senza falsi positivi.\n"
         f"• 💰 <b>Prezzo Totale Trasparente</b>: calcola sempre prezzo articolo + spedizione.\n"
@@ -227,7 +227,7 @@ async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = full_text
 
     status_msg = await update.message.reply_text(
-        f"🔎 Cerco <b>'{query}'</b> su Subito, Vinted, eBay e Wallapop...\n"
+        f"🔎 Cerco <b>'{query}'</b> su Subito, Vinted, Kleinanzeigen, Rebuy, Willhaben, Marktplaats ed eBay...\n"
         f"<i>Analisi difetti e calcolo convenienza in corso...</i>",
         parse_mode=ParseMode.HTML
     )
@@ -407,6 +407,8 @@ async def stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "vinted": "🔵 Vinted",
         "kleinanzeigen": "🟢 Kleinanzeigen",
         "rebuy": "🟣 Rebuy",
+        "willhaben": "🇦🇹 Willhaben",
+        "marktplaats": "🇳🇱 Marktplaats",
         "ebay": "🔴 eBay",
         "wallapop": "🟠 Wallapop"
     }
@@ -477,7 +479,7 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
         console_name = data.split(":", 1)[1]
         await query.edit_message_text(
             f"🔎 Scansione in corso per <b>'{console_name}'</b>...\n"
-            f"<i>Controllo Subito, Vinted, eBay e Wallapop con filtro anti-giochi...</i>",
+            f"<i>Controllo Subito, Vinted, Kleinanzeigen, Rebuy, Willhaben e Marktplaats...</i>",
             parse_mode=ParseMode.HTML
         )
         try:

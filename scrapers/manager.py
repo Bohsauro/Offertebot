@@ -9,6 +9,8 @@ from scrapers.ebay import EbayScraper
 from scrapers.wallapop import WallapopScraper
 from scrapers.kleinanzeigen import KleinanzeigenScraper
 from scrapers.rebuy import RebuyScraper
+from scrapers.willhaben import WillhabenScraper
+from scrapers.marktplaats import MarktplaatsScraper
 from core.config import settings
 from core.analyzer import analyzer
 
@@ -22,6 +24,8 @@ class ScraperManager:
             VintedScraper(),
             KleinanzeigenScraper(),
             RebuyScraper(),
+            WillhabenScraper(),
+            MarktplaatsScraper(),
             EbayScraper(),
             WallapopScraper(),
         ]

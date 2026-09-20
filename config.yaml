@@ -12,6 +12,8 @@ scrapers:
   vinted: true
   kleinanzeigen: true
   rebuy: true
+  willhaben: true
+  marktplaats: true
   ebay: true
   wallapop: false
 
