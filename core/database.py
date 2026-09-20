@@ -59,11 +59,12 @@ class Database:
                 );
             """)
 
-            # Aggiunge colonna ai_rules se non esiste già da precedenti installazioni
-            try:
-                await db.execute("ALTER TABLE tracked_searches ADD COLUMN ai_rules TEXT;")
-            except Exception:
-                pass
+            # Migrazioni automatiche per colonne aggiunte in versioni successive
+            for col_def in ("min_price REAL", "ai_rules TEXT"):
+                try:
+                    await db.execute(f"ALTER TABLE tracked_searches ADD COLUMN {col_def};")
+                except Exception:
+                    pass
 
             # Tabella offerte viste / notificate
             await db.execute("""
